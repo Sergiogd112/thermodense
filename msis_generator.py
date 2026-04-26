@@ -263,6 +263,7 @@ def _add_msis_columns(df, inner_threads=1):
     out = df.with_columns(
         *densities,
         pl.Series("f107", f107),
+        pl.Series("f107a", f107a),
         pl.Series("ap", aps[:, 0]),
         pl.Series("qflag", f107_type),
     )
@@ -290,6 +291,7 @@ def compute_msis_density(
     src_path = Path(file)
     dst_path = _output_path_for(file)
     tmp_path = dst_path.with_suffix(f"{dst_path.suffix}.tmp")
+    os.makedirs(tmp_path.parent, exist_ok=True)
 
     parquet_file = pq.ParquetFile(src_path)
     est_batches = _estimate_num_batches(parquet_file, batch_size)

@@ -1,19 +1,23 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 
+from tqdm import tqdm
+
 from .common import (
-    curl_download,
     curl_text,
+    download_parallel,
     get_base_dir,
     in_ym_range,
     parse_apache_index_filenames,
 )
 from .counter import Counters
+from .manifest import ManifestEntry, create_or_update_manifest
 
 BASE_DIR = get_base_dir()
 REF_ROOT = BASE_DIR / "data" / "original"
+MANIFEST_PATH = REF_ROOT / "tudelft" / "manifest.json"
+
 TUDELFT_MISSIONS: dict[str, dict[str, object]] = {
     "grace": {
         "index_urls": (
@@ -97,6 +101,7 @@ def download_tudelft(
     *,
     overwrite: bool = False,
     resume: bool = True,
+    max_workers: int = 4,
 ) -> Counters:
     """Download TU Delft thermosphere data for specified missions.
 
@@ -110,6 +115,7 @@ def download_tudelft(
         end_ym: Optional (year, month) tuple to filter files up to this date.
         overwrite: If True, re-download existing files. If False, skip existing files.
         resume: If True, resume partial downloads using curl's continue feature.
+        max_workers: Maximum number of concurrent download threads (default: 4).
 
     Returns:
         Counters object with downloaded, skipped_existing, and failed counts.
@@ -121,21 +127,33 @@ def download_tudelft(
         ...     end_ym=(2020, 12),
         ...     overwrite=False,
         ...     resume=True,
+        ...     max_workers=4,
         ... )
         >>> print(f"Downloaded: {counters.downloaded}")
     """
-    counters = Counters()
     root = REF_ROOT / "tudelft"
     root.mkdir(parents=True, exist_ok=True)
+
+    # Collect all download tasks across all missions
+    all_downloads: list[tuple[str, Path]] = []
+    all_entries: list[ManifestEntry] = []
 
     if missions is None:
         missions = list(TUDELFT_MISSIONS.keys())
 
-    for mission in missions:
+    for mission in tqdm(missions, desc="Processing missions"):
         cfg = TUDELFT_MISSIONS.get(mission)
         if cfg is None:
-            counters.failed += 1
             print(f"  FAILED: unknown mission '{mission}'")
+            # Create failed entry for tracking
+            all_entries.append(
+                ManifestEntry(
+                    path=f"tudelft/{mission}",
+                    url="",
+                    status="failed",
+                    error=f"Unknown mission: {mission}",
+                )
+            )
             continue
 
         index_urls = cfg.get("index_urls")
@@ -149,7 +167,6 @@ def download_tudelft(
             or not isinstance(dest_subdir, str)
             or not isinstance(fallback_dns_zip, bool)
         ):
-            counters.failed += 1
             print(f"  FAILED: invalid TU Delft config for mission {mission}")
             continue
 
@@ -167,7 +184,6 @@ def download_tudelft(
                 errors.append(f"{idx_url} -> {exc}")
 
         if not html:
-            counters.failed += 1
             print(f"  FAILED listing mission {mission}. Tried:")
             for line in errors:
                 print(f"    - {line}")
@@ -186,16 +202,38 @@ def download_tudelft(
         dest.mkdir(parents=True, exist_ok=True)
         print(f"  Files selected: {len(names)}")
 
-        for idx, name in enumerate(names, start=1):
-            print(f"  [{idx}/{len(names)}] {name}")
+        # Queue downloads for this mission
+        for name in names:
             url = used_index_url + name
-            curl_download(
-                url,
-                dest / name,
-                overwrite=overwrite,
-                resume=resume,
-                counters=counters,
-            )
+            out_path = dest / name
+            all_downloads.append((url, out_path))
+
+    # Download all files in parallel
+    if all_downloads:
+        entries, counters = download_parallel(
+            all_downloads,
+            REF_ROOT,
+            overwrite=overwrite,
+            resume=resume,
+            max_workers=max_workers,
+            timeout_s=60,
+            desc=f"Downloading {len(all_downloads)} TU Delft files",
+        )
+        all_entries.extend(entries)
+    else:
+        counters = Counters()
+
+    # Save manifest with all entries
+    manifest = create_or_update_manifest(
+        dataset="tudelft",
+        manifest_path=MANIFEST_PATH,
+        entries=all_entries,
+    )
+    print(f"Manifest saved: {MANIFEST_PATH}")
+    print(f"  Total tracked files: {len(manifest.entries)}")
+    print(f"  Downloaded: {counters.downloaded}")
+    print(f"  Skipped: {counters.skipped_existing}")
+    print(f"  Failed: {counters.failed}")
 
     return counters
 

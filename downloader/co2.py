@@ -1,10 +1,16 @@
 from __future__ import annotations
 
-from .common import curl_download, ensure_dir, get_base_dir
+from pathlib import Path
+
+from .common import download_parallel, ensure_dir, get_base_dir
 from .counter import Counters
+from .manifest import ManifestEntry, create_or_update_manifest
 
 BASE_DIR = get_base_dir()
-DEST_DIR = BASE_DIR / "data" / "original" / "co2"
+REF_ROOT = BASE_DIR / "data" / "original"
+DEST_DIR = REF_ROOT / "co2"
+MANIFEST_PATH = DEST_DIR / "manifest.json"
+
 BASE_URL = "https://gml.noaa.gov/webdata/ccgg/trends/co2"
 
 FILES: dict[str, str] = {
@@ -24,6 +30,7 @@ def download_co2(
     *,
     overwrite: bool = False,
     resume: bool = True,
+    max_workers: int = 4,
 ) -> Counters:
     """Download NOAA CO2 datasets.
 
@@ -33,30 +40,48 @@ def download_co2(
     Args:
         overwrite: If True, re-download existing files. If False, skip existing files.
         resume: If True, resume partial downloads using curl's continue feature.
+        max_workers: Maximum number of concurrent download threads (default: 4).
 
     Returns:
         Counters object with downloaded, skipped_existing, and failed counts.
 
     Example:
-        >>> counters = download_co2(overwrite=False, resume=True)
+        >>> counters = download_co2(overwrite=False, resume=True, max_workers=2)
         >>> print(f"Downloaded: {counters.downloaded}")
     """
-    counters = Counters()
     ensure_dir(DEST_DIR)
 
+    # Prepare download list
+    downloads: list[tuple[str, Path]] = []
     for src, dst in FILES.items():
         url = f"{BASE_URL}/{src}"
-        out = DEST_DIR / dst
-        curl_download(
-            url,
-            out,
-            overwrite=overwrite,
-            resume=resume,
-            retries=4,
-            retry_delay=2,
-            timeout_s=120,
-            counters=counters,
-        )
+        out_path = DEST_DIR / dst
+        downloads.append((url, out_path))
+
+    # Download all files in parallel
+    entries, counters = download_parallel(
+        downloads,
+        REF_ROOT,
+        overwrite=overwrite,
+        resume=resume,
+        max_workers=max_workers,
+        retries=4,
+        retry_delay=2,
+        timeout_s=120,
+        desc="Downloading CO2 data",
+    )
+
+    # Save manifest with all entries
+    manifest = create_or_update_manifest(
+        dataset="co2",
+        manifest_path=MANIFEST_PATH,
+        entries=entries,
+    )
+    print(f"Manifest saved: {MANIFEST_PATH}")
+    print(f"  Total tracked files: {len(manifest.entries)}")
+    print(f"  Downloaded: {counters.downloaded}")
+    print(f"  Skipped: {counters.skipped_existing}")
+    print(f"  Failed: {counters.failed}")
 
     return counters
 

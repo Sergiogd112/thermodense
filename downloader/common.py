@@ -4,10 +4,15 @@ import os
 import re
 import subprocess
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
+
+from tqdm import tqdm
 
 from .counter import Counters
+from .manifest import ManifestEntry, create_or_update_manifest, ensure_dir, now_iso
 
 
 @dataclass(frozen=True)
@@ -24,10 +29,6 @@ def get_base_dir() -> Path:
     if override:
         return Path(override).expanduser().resolve()
     return Path(__file__).resolve().parents[2]
-
-
-def ensure_dir(path: Path) -> None:
-    path.mkdir(parents=True, exist_ok=True)
 
 
 def run_cmd(cmd: list[str]) -> tuple[int, str, str]:
@@ -71,12 +72,19 @@ def curl_download(
     retry_delay: int = 2,
     timeout_s: int | None = None,
     resume: bool = True,
-) -> bool | None:
+) -> Literal["downloaded", "skipped", "failed"]:
+    """Download a file with curl, tracking the result.
+
+    Returns:
+        "downloaded" if the file was successfully downloaded,
+        "skipped" if the file already exists and was not overwritten,
+        "failed" if the download failed.
+    """
     ensure_dir(out_path.parent)
     if out_path.exists() and out_path.stat().st_size > 0 and not overwrite:
         if counters:
-            counters.skipped_existing += 1
-        return False
+            counters.increment("skipped_existing")
+        return "skipped"
 
     cmd = [
         "curl",
@@ -101,18 +109,169 @@ def curl_download(
     rc, _out, err = run_cmd(cmd)
     if rc == 0 and out_path.exists() and out_path.stat().st_size > 0:
         if counters:
-            counters.downloaded += 1
-        return True
+            counters.increment("downloaded")
+        return "downloaded"
 
     if counters:
-        counters.failed += 1
-    print(f"  FAILED: {url} -> {out_path} ({err.strip()[:200]})")
+        counters.increment("failed")
+    # Don't print here to avoid interleaved output in parallel mode
+    # Caller can handle error reporting
     try:
         if out_path.exists() and out_path.stat().st_size == 0:
             out_path.unlink()
     except OSError:
         pass
-    return None
+    return "failed"
+
+
+def download_single(
+    url: str,
+    out_path: Path,
+    base_dir: Path,
+    *,
+    overwrite: bool = False,
+    resume: bool = True,
+    retries: int = 5,
+    retry_delay: int = 2,
+    timeout_s: int | None = None,
+) -> ManifestEntry:
+    """Download a single file and return a manifest entry.
+
+    This function is designed to be used with ThreadPoolExecutor for parallel downloads.
+    """
+    ensure_dir(out_path.parent)
+
+    status: Literal["downloaded", "skipped", "failed"]
+    error = None
+
+    if out_path.exists() and out_path.stat().st_size > 0 and not overwrite:
+        status = "skipped"
+    else:
+        cmd = [
+            "curl",
+            "-L",
+            "--fail",
+            "--retry",
+            str(retries),
+            "--retry-delay",
+            str(retry_delay),
+            "-s",  # Silent mode for parallel downloads
+        ]
+        if resume:
+            cmd.extend(["-C", "-"])
+        if timeout_s is not None:
+            cmd.extend(["--connect-timeout", "20", "--max-time", str(timeout_s)])
+        cmd.extend(["-o", str(out_path), url])
+
+        rc, _out, err = run_cmd(cmd)
+        if rc == 0 and out_path.exists() and out_path.stat().st_size > 0:
+            status = "downloaded"
+        else:
+            status = "failed"
+            error = err.strip()[:200] if err else None
+            try:
+                if out_path.exists() and out_path.stat().st_size == 0:
+                    out_path.unlink()
+            except OSError:
+                pass
+
+    # Build manifest entry
+    try:
+        rel_path = str(out_path.relative_to(base_dir))
+    except ValueError:
+        rel_path = str(out_path)
+
+    size = None
+    if out_path.exists():
+        try:
+            size = out_path.stat().st_size
+        except OSError:
+            pass
+
+    return ManifestEntry(
+        path=rel_path,
+        url=url,
+        status=status,
+        timestamp=now_iso(),
+        size_bytes=size,
+        error=error,
+    )
+
+
+def download_parallel(
+    downloads: list[tuple[str, Path]],
+    base_dir: Path,
+    *,
+    overwrite: bool = False,
+    resume: bool = True,
+    max_workers: int = 4,
+    retries: int = 5,
+    retry_delay: int = 2,
+    timeout_s: int | None = None,
+    desc: str = "Downloading",
+) -> tuple[list[ManifestEntry], Counters]:
+    """Download multiple files in parallel using ThreadPoolExecutor.
+
+    Args:
+        downloads: List of (url, out_path) tuples
+        base_dir: Base directory for computing relative paths in manifest
+        overwrite: If True, re-download existing files
+        resume: If True, resume partial downloads
+        max_workers: Maximum number of concurrent download threads
+        retries: Number of retries for each download
+        retry_delay: Delay between retries in seconds
+        timeout_s: Timeout in seconds, None for no timeout
+        desc: Description for progress bar
+
+    Returns:
+        Tuple of (list of manifest entries, counters)
+    """
+    counters = Counters()
+    entries: list[ManifestEntry | None] = [None] * len(downloads)
+
+    if not downloads:
+        return [], counters
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_idx = {}
+        for idx, (url, out_path) in enumerate(downloads):
+            future = executor.submit(
+                download_single,
+                url,
+                out_path,
+                base_dir,
+                overwrite=overwrite,
+                resume=resume,
+                retries=retries,
+                retry_delay=retry_delay,
+                timeout_s=timeout_s,
+            )
+            future_to_idx[future] = idx
+
+        # Collect results with progress bar
+        for future in tqdm(as_completed(future_to_idx), total=len(downloads), desc=desc):
+            idx = future_to_idx[future]
+            try:
+                entry = future.result()
+                entries[idx] = entry
+                counters.increment(entry.status)
+                if entry.status == "failed" and entry.error:
+                    print(f"  FAILED: {entry.url} -> {entry.path} ({entry.error})")
+            except Exception as exc:
+                # Should not happen, but handle gracefully
+                url, out_path = downloads[idx]
+                counters.increment("failed")
+                print(f"  FAILED: {url} -> {out_path} ({exc})")
+                entries[idx] = ManifestEntry(
+                    path=str(out_path.relative_to(base_dir)) if out_path.is_relative_to(base_dir) else str(out_path),
+                    url=url,
+                    status="failed",
+                    timestamp=now_iso(),
+                    error=str(exc)[:200],
+                )
+
+    return [e for e in entries if e is not None], counters
 
 
 def list_ftp_dir(url: str) -> list[str]:

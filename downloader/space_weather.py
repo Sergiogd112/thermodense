@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from .common import curl_download, ensure_dir, get_base_dir
+from pathlib import Path
+
+from .common import download_parallel, ensure_dir, get_base_dir
 from .counter import Counters
+from .manifest import ManifestEntry, create_or_update_manifest
 
 BASE_DIR = get_base_dir()
-DEST_DIR = BASE_DIR / "data" / "original" / "space_weather"
+REF_ROOT = BASE_DIR / "data" / "original"
+DEST_DIR = REF_ROOT / "space_weather"
+MANIFEST_PATH = DEST_DIR / "manifest.json"
 
 SOURCES: dict[str, str] = {
     "SW-Last5Years.txt": "https://celestrak.org/SpaceData/SW-Last5Years.txt",
@@ -18,6 +23,7 @@ def download_space_weather(
     *,
     overwrite: bool = False,
     resume: bool = True,
+    max_workers: int = 4,
 ) -> Counters:
     """Download space weather indices for density modeling.
 
@@ -27,26 +33,45 @@ def download_space_weather(
     Args:
         overwrite: If True, re-download existing files. If False, skip existing files.
         resume: If True, resume partial downloads using curl's continue feature.
+        max_workers: Maximum number of concurrent download threads (default: 4).
 
     Returns:
         Counters object with downloaded, skipped_existing, and failed counts.
 
     Example:
-        >>> counters = download_space_weather(overwrite=False, resume=True)
+        >>> counters = download_space_weather(overwrite=False, resume=True, max_workers=2)
         >>> print(f"Downloaded: {counters.downloaded}")
     """
-    counters = Counters()
     ensure_dir(DEST_DIR)
 
+    # Prepare download list
+    downloads: list[tuple[str, Path]] = []
     for name, url in SOURCES.items():
-        curl_download(
-            url,
-            DEST_DIR / name,
-            overwrite=overwrite,
-            resume=resume,
-            timeout_s=180,
-            counters=counters,
-        )
+        out_path = DEST_DIR / name
+        downloads.append((url, out_path))
+
+    # Download all files in parallel
+    entries, counters = download_parallel(
+        downloads,
+        REF_ROOT,
+        overwrite=overwrite,
+        resume=resume,
+        max_workers=max_workers,
+        timeout_s=180,
+        desc="Downloading space weather data",
+    )
+
+    # Save manifest with all entries
+    manifest = create_or_update_manifest(
+        dataset="space_weather",
+        manifest_path=MANIFEST_PATH,
+        entries=entries,
+    )
+    print(f"Manifest saved: {MANIFEST_PATH}")
+    print(f"  Total tracked files: {len(manifest.entries)}")
+    print(f"  Downloaded: {counters.downloaded}")
+    print(f"  Skipped: {counters.skipped_existing}")
+    print(f"  Failed: {counters.failed}")
 
     return counters
 
