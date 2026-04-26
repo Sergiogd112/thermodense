@@ -5,14 +5,17 @@ description = "Thermosphere density benchmarking against MSIS models"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "altair>=6.1.0",
     "basedpyright>=1.39.3",
     "black[jupyter]>=26.3.1",
+    "filelock>=3.29.0",
     "hvplot>=0.12.2",
     "jupyter>=1.1.1",
     "matplotlib>=3.10.9",
     "numpy>=2.4.4",
     "plotly>=6.7.0",
     "polars>=1.40.1",
+    "pyarrow>=24.0.0",
     "pymsis>=0.12.0",
     "pytest>=8.4.2",
     "ruff>=0.15.11",
