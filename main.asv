@@ -1,0 +1,163 @@
+function filePaths = listFilesIgnoreDirs(rootFolder, excludeNames)
+% rootFolder   : string or char scalar, folder to start recursion
+% excludeNames : cell array of names to ignore (e.g., {'node_modules','build'})
+
+if ischar(rootFolder), rootFolder = string(rootFolder); end
+if ischar(excludeNames), excludeNames = {excludeNames}; end
+
+% Get everything recursively
+allEntries = dir(fullfile(rootFolder, '**', '*'));
+isFile = ~[allEntries.isdir];
+files = allEntries(isFile);
+
+% Preallocate
+filePaths = strings(0);
+
+for k = 1:numel(files)
+    f = files(k);
+    folderParts = split(string(f.folder), filesep);            % path components
+    if any(ismember(folderParts, string(excludeNames)))       % skip if any part matches
+        continue
+    end
+    filePaths(end+1) = fullfile(f.folder, f.name);            % collect full path
+end
+filePaths = cellstr(filePaths); % return as cellstr (common for file lists)
+end
+
+function merge_parquet_files(tmpFiles, outfile)
+
+    pl = py.importlib.import_module('polars');
+
+    % Convert MATLAB string array → Python list
+    pyList = py.list(tmpFiles);
+
+    % Use lazy scan (does NOT load everything into memory)
+    lazyFrames = py.list();
+    for i = 1:length(pyList)
+        lf = pl.scan_parquet(pyList{i});
+        lazyFrames.append(lf);
+    end
+
+    % Concatenate lazily and collect once
+    combined = pl.concat(lazyFrames).collect();
+
+    % Write final parquet
+    combined.write_parquet(outfile);
+
+    fprintf('Merged into %s\n', outfile);
+end
+
+clear all;
+close all;
+files=listFilesIgnoreDirs('data/decoded/tudelft','tmp');
+output_folder='data/mmsis/tudelft/';
+% Create output folder if it doesn't exist
+if ~exist(output_folder, 'dir')
+    mkdir(output_folder);
+end
+
+matFile=aeroReadSpaceWeatherData('SW-Reduced.csv');
+
+S = load(matFile);   % or aeroReadSpaceWeatherData output
+
+keep = {
+    'YEAR','MONTH','DAY', ...
+    'AP1','AP2','AP3','AP4','AP5','AP6','AP7','AP8','AP_AVG', ...
+    'F107_OBS','F107_DATA_TYPE','F107_OBS_CENTER81'
+};
+
+fields = fieldnames(S);
+
+% remove everything not in keep list
+S2 = rmfield(S, setdiff(fields, keep));
+filtered_mat='SW_filtered.mat';
+save(filtered_mat, '-struct', 'S2');
+
+timestamp_col='timestamp';
+lat='Latitude_deg_';
+lon='Longitude_deg_';
+alt='Altitude_m_';
+lst='LocalSolarTime_hours_';
+
+tmp_dir = fullfile(output_folder, 'tmp');
+
+if ~exist(tmp_dir, 'dir')
+    mkdir(tmp_dir);
+end
+
+for k = 1:numel(files)
+    fileparts_ = split(files{k}, filesep);
+    mission = fileparts_{end-1};
+    filename = fileparts_{end};
+
+    if endsWith(filename, '.csv')
+        continue
+    end
+
+    fprintf('Processing %s\n', filename);
+
+    mission_outdir = fullfile(output_folder, mission);
+    if ~exist(mission_outdir, 'dir')
+        mkdir(mission_outdir);
+    end
+
+    outfile = fullfile(mission_outdir, replace(filename,'merged','mmsis'));
+
+    % temp files for this parquet
+    tmp_prefix = fullfile(tmp_dir, replace(filename,'merged','mmsis'));
+
+    info = parquetinfo(files{k});
+
+    tmpFiles = strings(info.NumRowGroups,1);
+
+    for rg = 1:info.NumRowGroups
+        dataframe = parquetread(files{k}, 'RowGroups', rg);
+
+        batchSize = 25600;
+        n = height(dataframe);
+
+        f107average = zeros(n,1);
+        f107daily   = zeros(n,1);
+        magneticIndex = zeros(n,7);
+
+        fprintf('  RowGroup %d: space weather...\n', rg)
+
+        for i = 1:batchSize:n
+            fprintf('%d ',i)
+            idx = i:min(i+batchSize-1, n);
+            t = dataframe.timestamp(idx);
+
+            [f107average(idx), f107daily(idx), magneticIndex(idx,:)] = ...
+                fluxSolarAndGeomagnetic(t, filtered_mat)%,F107ExtrapMethod='non-clip',MagneticIndexExtrapMethod='non-clip');
+        end
+        fprintf('\n')
+
+        fprintf('  RowGroup %d: density...\n', rg)
+
+        [~, densities] = atmosnrlmsise00( ...
+            dataframe.(alt), dataframe.(lat), dataframe.(lon), ...
+            year(dataframe.timestamp), ...
+            day(dataframe.timestamp,'dayofyear'), ...
+            posixtime(dataframe.timestamp), ...
+            dataframe.(lst), ...
+            f107average, f107daily, magneticIndex);
+
+        dataframe.matlab_density = densities(:,6);
+
+        % 🔸 write chunk
+        tmpFile = sprintf('%s_rg%03d.parquet', tmp_prefix, rg);
+        parquetwrite(tmpFile, dataframe);
+
+        tmpFiles(rg) = tmpFile;
+    end
+
+    % 🔹 merge step (Python)
+    merge_parquet_files(tmpFiles, outfile);
+
+    % 🔹 cleanup temp files
+    for i = 1:numel(tmpFiles)
+        if isfile(tmpFiles(i))
+            delete(tmpFiles(i));
+        end
+    end
+end

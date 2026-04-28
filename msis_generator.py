@@ -330,7 +330,7 @@ def compute_msis_density(
                 writer = pq.ParquetWriter(
                     tmp_path.as_posix(),
                     out_table.schema,
-                    compression="zstd",
+                    compression="snappy",
                 )
 
             writer.write_table(out_table)

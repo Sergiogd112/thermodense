@@ -64,8 +64,8 @@ TUDELFT_SCHEMAS = {
         "Argument of Latitude (deg)": pl.Float64,
         "Density (kg/m^3)": pl.Float64,
         "Density Mean (kg/m^3)": pl.Float64,
-        "Anomalus Density (kg/m^3)": pl.Float16,
-        "Anomalus Density Mean (kg/m^3)": pl.Float16,
+        "Anomalus Density (kg/m^3)": pl.Float64,
+        "Anomalus Density Mean (kg/m^3)": pl.Float64,
     },
     "GRACE": {
         "Date yyyy-mm-dd": pl.Date,
@@ -78,8 +78,8 @@ TUDELFT_SCHEMAS = {
         "Argument of Latitude (deg)": pl.Float64,
         "Density (kg/m^3)": pl.Float64,
         "Density Mean (kg/m^3)": pl.Float64,
-        "Anomalus Density (kg/m^3)": pl.Float16,
-        "Anomalus Density Mean (kg/m^3)": pl.Float16,
+        "Anomalus Density (kg/m^3)": pl.Float64,
+        "Anomalus Density Mean (kg/m^3)": pl.Float64,
     },
     "GRACE_FO": {
         "Date yyyy-mm-dd": pl.Date,
@@ -92,8 +92,8 @@ TUDELFT_SCHEMAS = {
         "Argument of Latitude (deg)": pl.Float64,
         "Density (kg/m^3)": pl.Float64,
         "Density Mean (kg/m^3)": pl.Float64,
-        "Anomalus Density (kg/m^3)": pl.Float16,
-        "Anomalus Density Mean (kg/m^3)": pl.Float16,
+        "Anomalus Density (kg/m^3)": pl.Float64,
+        "Anomalus Density Mean (kg/m^3)": pl.Float64,
     },
     "SWARM": {
         "Date yyyy-mm-dd": pl.Date,
@@ -106,8 +106,8 @@ TUDELFT_SCHEMAS = {
         "Argument of Latitude (deg)": pl.Float64,
         "Density (kg/m^3)": pl.Float64,
         "Density Mean (kg/m^3)": pl.Float64,
-        "Anomalus Density (kg/m^3)": pl.Float16,
-        "Anomalus Density Mean (kg/m^3)": pl.Float16,
+        "Anomalus Density (kg/m^3)": pl.Float64,
+        "Anomalus Density Mean (kg/m^3)": pl.Float64,
     },
     "GOCE": {
         "Date yyyy-mm-dd": pl.Date,
@@ -120,9 +120,9 @@ TUDELFT_SCHEMAS = {
         "Argument of Latitude (deg)": pl.Float64,
         "Density (kg/m^3)": pl.Float64,
         "Density Mean (kg/m^3)": pl.Float64,
-        "Anomalus Density (kg/m^3)": pl.Float16,
-        "Anomalus Density Mean (kg/m^3)": pl.Float16,
-        "Degraded Flag Thrusters": pl.Float16,
+        "Anomalus Density (kg/m^3)": pl.Float64,
+        "Anomalus Density Mean (kg/m^3)": pl.Float64,
+        "Degraded Flag Thrusters": pl.Float64,
     },
 }
 
@@ -280,7 +280,7 @@ def merge_parquets(
                 .alias("timestamp")
             ).drop(["Date yyyy-mm-dd", "Time hh:mm:ss.sss"])
 
-        merged_df.write_parquet(output_path, compression="lz4")
+        merged_df.write_parquet(output_path, compression="snappy")
         # Update manifest with locking
         with FileLock(manifest_path + ".lock"):
             if os.path.exists(manifest_path):
