@@ -145,6 +145,9 @@ cookie string directly, for example `connect.sid=...`.
 The archive is rate-limited to roughly one file per minute, so downloads are run
 sequentially with a default 65-second gap between real requests.
 
+This dataset is currently downloaded and decoded for reference, but it is not
+used in the main analysis pipeline yet.
+
 ```python
 from downloader.hasdm import download_hasdm
 

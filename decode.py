@@ -4,14 +4,11 @@ import os
 import re
 import traceback
 import zipfile
-from multiprocessing import Pool
 from pathlib import Path
-from pprint import pp, pprint
+from pprint import pprint
 from typing import List, Tuple
-import gc
 
 import polars as pl
-from tqdm import tqdm
 from filelock import FileLock
 
 OUTPUT_COLUMNS = [
@@ -125,14 +122,74 @@ TUDELFT_SCHEMAS = {
         "Degraded Flag Thrusters": pl.Float64,
     },
 }
+HASDM_SCHEMA = {
+    "YYYYMMDDhhmm": pl.Utf8,
+    "JulianDay": pl.Float64,
+    "HTM": pl.Float64,
+    "LAT": pl.Float64,
+    "LON": pl.Float64,
+    "LST": pl.Float64,
+    "RHO": pl.Float64,
+}
 
 
-def normalize_whitespace(raw: bytes) -> bytes:
+def normalize_whitespace(
+    raw: bytes,
+    *,
+    comment_prefixes: tuple[bytes, ...] = (b"#",),
+) -> bytes:
     return b"".join(
         b";".join(line.split()) + b"\n"
         for line in raw.splitlines()
-        if line.strip() and not line.startswith(b"#")
+        if line.strip() and not line.startswith(comment_prefixes)
     )
+
+
+def _read_first_txt_from_zip(sourcepath: str) -> tuple[str, bytes] | None:
+    with zipfile.ZipFile(sourcepath, "r") as zip_ref:
+        txt_name = next(
+            (name for name in zip_ref.namelist() if name.lower().endswith(".txt")),
+            None,
+        )
+        if txt_name is None:
+            logging.warning("No .txt file found in %s", sourcepath)
+            return None
+        with zip_ref.open(txt_name, "r") as f:
+            return txt_name, f.read()
+
+
+def _append_decode_manifest_entry(
+    manifest_path: str,
+    *,
+    mission: str,
+    mission_code: str,
+    parquet_path: str,
+    sourcepath: str,
+) -> None:
+    with FileLock(manifest_path + ".lock"):
+        if os.path.exists(manifest_path):
+            manifest_df = pl.read_csv(manifest_path)
+        else:
+            manifest_df = pl.DataFrame(
+                schema={
+                    "mission": pl.Utf8,
+                    "mission_code": pl.Utf8,
+                    "parquet_path": pl.Utf8,
+                    "source_path": pl.Utf8,
+                }
+            )
+
+        new_entry = pl.DataFrame(
+            {
+                "mission": [mission],
+                "mission_code": [mission_code],
+                "parquet_path": [parquet_path],
+                "source_path": [sourcepath],
+            }
+        )
+
+        updated_manifest = pl.concat([manifest_df, new_entry], how="vertical")
+        updated_manifest.write_csv(manifest_path)
 
 
 def decode_tudelft_single(
@@ -144,18 +201,10 @@ def decode_tudelft_single(
     schema = TUDELFT_SCHEMAS[mission.upper()]
     parquet_path = str(Path(outfilepath).with_suffix(".parquet"))
     mission_code = str(Path(sourcepath).name).split("_")[0].upper()
-    with zipfile.ZipFile(sourcepath, "r") as zip_ref:
-        txt_name = next(
-            (name for name in zip_ref.namelist() if name.lower().endswith(".txt")),
-            None,
-        )
-
-        if txt_name is None:
-            logging.warning("No .txt file found in %s", sourcepath)
-            return None
-
-        with zip_ref.open(txt_name, "r") as f:
-            raw = f.read()
+    zip_payload = _read_first_txt_from_zip(sourcepath)
+    if zip_payload is None:
+        return None
+    _txt_name, raw = zip_payload
 
     fixed = normalize_whitespace(raw)
     try:
@@ -176,31 +225,13 @@ def decode_tudelft_single(
 
         os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
         df.write_parquet(parquet_path, compression="lz4")
-        # Update manifest with locking
-        with FileLock(manifest_path + ".lock"):
-            if os.path.exists(manifest_path):
-                manifest_df = pl.read_csv(manifest_path)
-            else:
-                manifest_df = pl.DataFrame(
-                    schema={
-                        "mission": pl.Utf8,
-                        "mission_code": pl.Utf8,
-                        "parquet_path": pl.Utf8,
-                        "source_path": pl.Utf8,
-                    }
-                )
-
-            new_entry = pl.DataFrame(
-                {
-                    "mission": [mission],
-                    "mission_code": [mission_code],
-                    "parquet_path": [parquet_path],
-                    "source_path": [sourcepath],
-                }
-            )
-
-            updated_manifest = pl.concat([manifest_df, new_entry], how="vertical")
-            updated_manifest.write_csv(manifest_path)
+        _append_decode_manifest_entry(
+            manifest_path,
+            mission=mission,
+            mission_code=mission_code,
+            parquet_path=parquet_path,
+            sourcepath=sourcepath,
+        )
 
         return (mission, mission_code, parquet_path, sourcepath)
     except Exception as e:
@@ -224,6 +255,86 @@ def decode_tudelft_single(
 
 def decode_tudelft_single_worker(args):
     return decode_tudelft_single(*args)
+
+
+def _hasdm_mission_code(sourcepath: str, txt_name: str | None = None) -> str:
+    source_name = txt_name or Path(sourcepath).name
+    match = re.search(r"(\d{4})(\d{2})", source_name)
+    if match is None:
+        raise ValueError(f"Unable to determine HASDM year from {source_name}")
+    return f"HASDM_{match.group(1)}"
+
+
+def decode_hasdm_single(
+    sourcepath: str,
+    outfilepath: str,
+    manifest_path: str,
+) -> Tuple[str, str, str, str] | None:
+    parquet_path = str(Path(outfilepath).with_suffix(".parquet"))
+    zip_payload = _read_first_txt_from_zip(sourcepath)
+    if zip_payload is None:
+        return None
+    txt_name, raw = zip_payload
+    mission = "hasdm"
+    mission_code = _hasdm_mission_code(sourcepath, txt_name)
+
+    fixed = normalize_whitespace(raw, comment_prefixes=(b"#", b":"))
+
+    try:
+        df = pl.read_csv(
+            io.BytesIO(fixed),
+            separator=";",
+            has_header=False,
+            schema=HASDM_SCHEMA,
+        )
+
+        if df.is_empty() or df.width < len(HASDM_SCHEMA):
+            logging.warning("HASDM file %s has an unexpected format and will be skipped.", sourcepath)
+            return None
+
+        df = (
+            df.with_columns(
+                pl.col("YYYYMMDDhhmm")
+                .str.strptime(pl.Datetime, format="%Y%m%d%H%M", strict=True)
+                .alias("timestamp"),
+                (pl.col("HTM") * 1000.0).alias("Altitude (m)"),
+                pl.col("LAT").alias("Latitude (deg)"),
+                pl.col("LON").alias("Longitude (deg)"),
+                pl.col("LST").alias("Local Solar Time (hours)"),
+                pl.col("RHO").alias("Density (kg/m^3)"),
+            )
+            .select(
+                [
+                    "JulianDay",
+                    "Altitude (m)",
+                    "Longitude (deg)",
+                    "Latitude (deg)",
+                    "Local Solar Time (hours)",
+                    "Density (kg/m^3)",
+                    "timestamp",
+                ]
+            )
+            .sort("timestamp")
+        )
+
+        os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
+        df.write_parquet(parquet_path, compression="lz4")
+        _append_decode_manifest_entry(
+            manifest_path,
+            mission=mission,
+            mission_code=mission_code,
+            parquet_path=parquet_path,
+            sourcepath=sourcepath,
+        )
+        return (mission, mission_code, parquet_path, sourcepath)
+    except Exception as e:
+        logging.error("Error processing HASDM %s: %s", sourcepath, e)
+        traceback.print_exc()
+        return None
+
+
+def decode_hasdm_single_worker(args):
+    return decode_hasdm_single(*args)
 
 
 def merge_parquets(
@@ -279,6 +390,8 @@ def merge_parquets(
                 .str.strptime(pl.Datetime, format="%Y-%m-%dT%H:%M:%S%.3fZ")
                 .alias("timestamp")
             ).drop(["Date yyyy-mm-dd", "Time hh:mm:ss.sss"])
+        if "timestamp" in merged_df.columns:
+            merged_df = merged_df.sort("timestamp")
 
         merged_df.write_parquet(output_path, compression="snappy")
         # Update manifest with locking
@@ -293,7 +406,7 @@ def merge_parquets(
                     }
                 )
 
-            mission_code = Path(output_path).stem.split("_")[0]
+            mission_code = Path(output_path).stem.removesuffix("_merged")
             new_entry = pl.DataFrame(
                 {
                     "mission_code": [mission_code],
