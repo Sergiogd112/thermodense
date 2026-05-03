@@ -196,7 +196,7 @@ def _run_msis_job(args):
         column_name,
     ) = args
 
-    density = msis.run(
+    density = msis.calculate(
         timestamps,
         lons,
         lats,

@@ -106,6 +106,7 @@ flowchart TD
 │   ├── tudelft.py           # Download TU Delft satellite data
 │   ├── space_weather.py     # Fetch space weather indices (F10.7, Ap)
 │   ├── co2.py               # CO₂ concentration data downloader
+│   ├── hasdm.py             # HASDM monthly archive downloader
 │   ├── common.py            # Shared download utilities
 │   ├── manifest.py          # Download tracking and manifest management
 │   └── counter.py           # Download statistics counters
@@ -128,6 +129,30 @@ download_tudelft(
     start_ym=(2010, 1),
     end_ym=(2015, 12)
 )
+```
+
+### Download HASDM Monthly Archive Data
+
+The HASDM archive endpoint currently redirects through `login.spacenvironment.net`.
+Provide an authenticated session to `curl` with one of these environment variables:
+
+- `HASDM_COOKIE`: raw `Cookie` header value
+- `HASDM_COOKIE_FILE`: path to a curl-compatible cookie jar
+
+If you capture the request from a browser session, `HASDM_COOKIE` can be set to the
+cookie string directly, for example `connect.sid=...`.
+
+The archive is rate-limited to roughly one file per minute, so downloads are run
+sequentially with a default 65-second gap between real requests.
+
+```python
+from downloader.hasdm import download_hasdm
+
+# Download the full 2000-01 through 2025-12 archive
+download_hasdm()
+
+# Or narrow the range while keeping the 65s spacing between requests
+download_hasdm(start_ym=(2024, 1), end_ym=(2024, 12), delay_s=65)
 ```
 
 ### Generate MSIS Model Predictions

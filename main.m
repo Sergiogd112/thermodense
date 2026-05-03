@@ -8,7 +8,7 @@ if ~exist(output_folder, "dir")
     mkdir(output_folder);
 end
 
-masterMat = aeroReadSpaceWeatherData("SW-Reduced.csv");
+masterMat = aeroReadSpaceWeatherData("SW-All.csv");
 
 S = load(masterMat);
 
