@@ -4,10 +4,10 @@ from pathlib import Path
 
 from .common import download_parallel, ensure_dir, get_base_dir
 from .counter import Counters
-from .manifest import ManifestEntry, create_or_update_manifest
+from .manifest import create_or_update_manifest
 
 BASE_DIR = get_base_dir()
-REF_ROOT = BASE_DIR / "data" / "original"
+REF_ROOT = Path("data") / "original"
 DEST_DIR = REF_ROOT / "space_weather"
 MANIFEST_PATH = DEST_DIR / "manifest.json"
 

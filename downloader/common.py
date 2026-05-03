@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 from collections.abc import Iterable
@@ -12,7 +11,7 @@ from typing import Literal
 from tqdm import tqdm
 
 from .counter import Counters
-from .manifest import ManifestEntry, create_or_update_manifest, ensure_dir, now_iso
+from .manifest import ManifestEntry, ensure_dir, now_iso
 
 
 @dataclass(frozen=True)
@@ -25,10 +24,7 @@ class DownloadResult:
 
 def get_base_dir() -> Path:
     """Resolve repository root with optional environment override."""
-    override = os.environ.get("EXODENSE_BASE_DIR")
-    if override:
-        return Path(override).expanduser().resolve()
-    return Path(__file__).resolve().parents[2]
+    return Path(".")
 
 
 def run_cmd(cmd: list[str]) -> tuple[int, str, str]:
@@ -68,6 +64,9 @@ def curl_download(
     overwrite: bool,
     counters: Counters | None = None,
     auth: dict | None = None,
+    headers: dict[str, str] | None = None,
+    cookie: str | None = None,
+    cookie_file: Path | None = None,
     retries: int = 5,
     retry_delay: int = 2,
     timeout_s: int | None = None,
@@ -104,6 +103,13 @@ def curl_download(
             cmd.extend(["-u", f"{auth['user']}:{auth['password']}"])
         if auth.get("bearer"):
             cmd.extend(["-H", f"Authorization: Bearer {auth['bearer']}"])
+    if headers:
+        for key, value in headers.items():
+            cmd.extend(["-H", f"{key}: {value}"])
+    if cookie:
+        cmd.extend(["-H", f"Cookie: {cookie}"])
+    if cookie_file:
+        cmd.extend(["-b", str(cookie_file)])
     cmd.extend(["-o", str(out_path), url])
 
     rc, _out, err = run_cmd(cmd)
@@ -250,7 +256,9 @@ def download_parallel(
             future_to_idx[future] = idx
 
         # Collect results with progress bar
-        for future in tqdm(as_completed(future_to_idx), total=len(downloads), desc=desc):
+        for future in tqdm(
+            as_completed(future_to_idx), total=len(downloads), desc=desc
+        ):
             idx = future_to_idx[future]
             try:
                 entry = future.result()
@@ -264,7 +272,11 @@ def download_parallel(
                 counters.increment("failed")
                 print(f"  FAILED: {url} -> {out_path} ({exc})")
                 entries[idx] = ManifestEntry(
-                    path=str(out_path.relative_to(base_dir)) if out_path.is_relative_to(base_dir) else str(out_path),
+                    path=(
+                        str(out_path.relative_to(base_dir))
+                        if out_path.is_relative_to(base_dir)
+                        else str(out_path)
+                    ),
                     url=url,
                     status="failed",
                     timestamp=now_iso(),

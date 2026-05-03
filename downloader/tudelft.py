@@ -15,7 +15,7 @@ from .counter import Counters
 from .manifest import ManifestEntry, create_or_update_manifest
 
 BASE_DIR = get_base_dir()
-REF_ROOT = BASE_DIR / "data" / "original"
+REF_ROOT = Path("data") / "original"
 MANIFEST_PATH = REF_ROOT / "tudelft" / "manifest.json"
 
 TUDELFT_MISSIONS: dict[str, dict[str, object]] = {
@@ -51,7 +51,7 @@ TUDELFT_MISSIONS: dict[str, dict[str, object]] = {
             "https://thermosphere.tudelft.nl/data/data/version_02/SWARM/",
         ),
         "dest_subdir": "swarm",
-        "prefixes": ("SWA_DNS_ACC_", "SWB_DNS_ACC_", "SWC_DNS_ACC_", "SW_DNS_ACC_"),
+        "prefixes": ("SWA_DNS_ACC_", "SWB_DNS_ACC_", "SWC_DNS_ACC_", "SW_DNS_ACC_","SA_DNS_POD_","SB_DNS_POD_","SC_DNS_POD_"),
         "fallback_dns_zip": True,
     },
     "goce": {
