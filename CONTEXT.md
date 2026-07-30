@@ -56,6 +56,10 @@ _Avoid_: calling this quantity global mean density when the intended label is th
 The plot notation \(\Delta\ell_\rho\) denotes the **Daily log-density range** diagnostic. Use this symbol for range axes, legends, and titles, while keeping the interpretation cautious because the diagnostic is sensitive to sampling, local-time structure, geomagnetic disturbances, altitude, and daily coverage.
 _Avoid_: using density range labels without distinguishing them from mean-density diagnostics
 
+**Density target diagnostic**:
+A named, source-independent density quantity exposed as an **Analysis target**. The initial diagnostics are daily mean \(\log_{10}\rho\) and **Daily log-density range**; model-error targets separately use **Model log-density-ratio error**. Source adapters map their native columns into these definitions rather than exposing arbitrary numeric columns.
+_Avoid_: raw source-column selection as scientific configuration; silently mixing raw density, log10 density, and natural-log error
+
 **Dependence analysis and causal discovery**:
 The thesis term for the combined workflow where correlation, frequency-domain analysis, and binning are exploratory dependence analyses, while PCMCI\(^+\) is the causal-discovery method used to infer conditional time-series links.
 _Avoid_: causality detection when referring to the full workflow
@@ -67,6 +71,14 @@ _Avoid_: unsupported numeric accuracy claims unless a cited source provides them
 **Activity-sigma bin**:
 A driver regime defined by grouping values of a solar or geomagnetic driver by standard deviations from that driver's mean, used to compare fitted density or model-error relationships across low, near-average, elevated, and sparse extreme activity conditions.
 _Avoid_: treating sigma bins as equally reliable when sample counts differ strongly
+
+**Activity-binned product**:
+A Pearson/Fisher or fitted-slope result produced by binning one selected solar or geomagnetic driver at a time, then estimating the target's relationship with each other selected driver in a separate plot. The binning driver is not also used as the fitted predictor. Correlation or slope with uncertainty is plotted against altitude, with one consistently coloured series per activity bin; a companion sample-count histogram reuses the same bin colours. A core run may emit separate solar-binned and geomagnetic-binned products from the same prepared table without expanding them into separate pipeline runs.
+_Avoid_: fitting the target against the same driver used to define the bins; combining several fitted drivers in one plot; changing bin colours between estimate and sample-count panels
+
+**Driver scatter product**:
+A descriptive figure for one analysis-target altitude with one subplot for every selected core or extension driver node. Each selected altitude channel of an altitude-resolved driver such as a SABER product remains a separate subplot; large selections are paginated rather than vertically averaged or matched to the target altitude. Subplots show points only by default; configuration may enable a fit for all or named drivers, using the same linear-fit artifact and uncertainty estimator as the slope analysis.
+_Avoid_: omitting extension drivers silently; collapsing selected SABER altitude channels into one scatter variable; fitting an independent renderer-only trendline
 
 **Subplot-level Results interpretation**:
 A Results-writing convention where each visible analytical subplot receives its own interpretation, while sample-count-only support panels may be folded into the corresponding slope or fit interpretation.
@@ -80,6 +92,38 @@ _Avoid_: treating zero crossings or auxiliary metrics as important when they do 
 The descriptive slope obtained by fitting density against calendar time for a selected data product and altitude, reported in \% per decade for comparison with literature compilations. It preserves the product's sampling interval, solar-cycle history, altitude coverage, and model/reference character, so it is a broad trend diagnostic rather than a deconfounded secular \(\mathrm{CO_2}\) cooling estimate.
 _Avoid_: presenting it as a directly comparable causal \(\mathrm{CO_2}\)-only trend unless solar, geomagnetic, sampling, and method differences are controlled.
 
+**Solar-adjusted direct trend estimator**:
+The dedicated trend module that estimates a **Direct calendar-time density trend** while fitting configured solar-control terms. It returns trend estimates and uncertainty rather than a solar-adjusted input series for frequency analysis, binning, or causal discovery.
+_Avoid_: remove solar effects as a shared preprocessing stage
+
+**PCMCI preprocessing profile**:
+One of two pre-registered input transformations for causal discovery: the primary detrended-anomaly profile uses seasonal anomalies with the 3-year rolling mean removed, while the robustness profile uses seasonal anomalies without that long-term removal. Raw-standardized inputs support stationarity diagnostics only, and the former CO2-preserved anomaly is not a default PCMCI\(^+\) claim.
+_Avoid_: treating all historical preprocessing variants as peer primary analyses; composing arbitrary unlabelled transformations
+
+**Frequency-analysis method**:
+The sampling-driven choice between FFT for regularly aligned series and Lomb--Scargle for irregularly sampled series. The frequency-analysis module selects the method from the prepared target's sampling contract and records that choice in provenance rather than requiring a routine user setting.
+_Avoid_: running FFT on irregular samples; treating FFT and Lomb--Scargle as interchangeable configuration variants
+
+**Analysis capability**:
+A target or source adapter's declared support for analysis methods, cadences, altitude structure, and geographic matching. The planner rejects requests outside those capabilities. TU Delft density and TU Delft model-error targets remain ineligible for PCMCI\(^+\) until their mission and sampling graph is resolved; raw executable empirical-model densities from MSIS or JB are also ineligible because their links primarily reflect prescribed model inputs. Native-grid WACCM-X density may use PCMCI\(^+\), as may otherwise eligible observed/reference and model-error targets.
+_Avoid_: warning and continuing with an unsupported method; exposing every analysis for every target
+
+**Analysis result artifact**:
+A canonical machine-readable analysis result with its provenance, such as a spectrum table, activity-binned statistics, PCMCI\(^+\) matrices and links, or direct-trend estimates. Figures are rendered from these artifacts and are never the only retained result or an upstream input.
+_Avoid_: treating a plot file as the analysis result; rerunning expensive analysis solely to change presentation
+
+**Study artifact graph**:
+The planned provenance graph in which acquisition, parsing, reference sampling, and shared driver preparation produce reusable immutable artifacts consumed by independently expanded analysis runs. Compatible cases share upstream artifacts and checkpoints rather than repeating the same work.
+_Avoid_: a self-contained download-to-plot pipeline for every target and driver variant; manually wiring shared cache paths between runs
+
+**Study execution identity**:
+The hybrid identity in which a human-readable execution ID groups one invocation of a study, while each prepared artifact and analysis case has a deterministic fingerprint derived from normalized configuration, input manifests, and implementation version. Reuse requires the fingerprint to match.
+_Avoid_: timestamp-only cache keys; reusing a checkpoint because its path exists without validating provenance
+
+**Analysis selection and preset**:
+The explicit list of analysis modules requested for a target family, optionally supplied through a named reusable preset. The planner expands the preset and validates every requested analysis against the target's **Analysis capabilities**; adapters do not silently choose analyses and the pipeline does not run every method by default.
+_Avoid_: hidden per-target analysis defaults; automatic run-everything behavior
+
 **Access-conditional thesis reproduction**:
 The reproducibility contract in which a code-only, checkpointed workflow rebuilds thesis results from original sources, while clearly requiring credentials or manually supplied files for sources that are not anonymously obtainable.
 _Avoid_: claiming that every reader can regenerate every result without the documented external data access
@@ -92,6 +136,62 @@ _Avoid_: treating every external source or intermediate artifact as a peer reade
 The paired observables hmF2, the altitude of the F2-layer electron-density maximum, and NmF2, the electron density at that maximum, used to distinguish a change in ionospheric position from a change in peak intensity.
 _Avoid_: using total electron content alone to claim that the ionosphere moved vertically
 
+**Analysis target**:
+The one physical density diagnostic or **Model log-density-ratio error** family analysed by a pipeline run. Descriptive analyses may retain that target's full altitude axis, but selecting different density products, model outputs, or error definitions expands into separate runs rather than combining them as peer targets.
+_Avoid_: study variable; treating Global mean thermospheric density and a HASDM-derived target as one target
+
+**PCMCI altitude group**:
+A configured set of altitude channels represented as separate target nodes in one multivariate PCMCI\(^+\) graph. Selecting several groups expands into independent PCMCI\(^+\) runs; for example, `[325, 500], 825` means one graph with distinct 325 km and 500 km nodes and another graph with only 825 km.
+_Avoid_: averaging grouped altitude channels into one density series
+
+**Physical PCMCI lag window**:
+The configured minimum and maximum causal-discovery lag expressed as physical durations, such as `0d` through `180d`. The planner converts those durations to integer lag steps only after resolving the run's **Cadence variant**, rejects durations that do not fall on cadence boundaries, and records both forms in provenance.
+_Avoid_: exposing one raw `tau_max` step count whose physical meaning changes between daily and 3-hour runs; choosing lag limits silently inside the PCMCI adapter
+
+**Reference sampling frame**:
+The exact timestamps, locations, altitudes, and sample identities extracted from the **TU Delft satellite density dataset** or HASDM and used unchanged to evaluate empirical-model density baselines and **Model log-density-ratio error**.
+_Avoid_: locations alone; inventing a model-comparison sampling frame for **Global mean thermospheric density** when its spatial construction is not documented
+
+**Paired model comparison sample**:
+The common complete reference sample set frozen before evaluating a selected model set. Every model-density and model-error run in the comparison uses exactly those rows, and cross-model renderers combine separate result artifacts only after this pairing is enforced.
+_Avoid_: comparing models evaluated on different available rows; intersecting samples only at plotting time
+
+**Model density source**:
+Either an executable empirical-model adapter, such as the MSIS-family or JB models, or a precomputed physics-based model dataset, such as WACCM-X, that produces modelled thermospheric density. WACCM-X may be analysed on its native grid as a standalone model-density target, but it must be explicitly aligned to a **Reference sampling frame** before computing **Model log-density-ratio error**.
+_Avoid_: treating WACCM-X as an observational density dataset or as an executable empirical-model adapter
+
+**Solar-proxy variant**:
+A matched analysis run using exactly one solar proxy, either F10.7 or F30, while holding the analysis target, cadence, geomagnetic driver, preprocessing choices, and accepted-quality sample rows fixed. Selecting both proxies expands into separate runs on their exact common-quality rows rather than placing both correlated proxies in one input matrix.
+_Avoid_: including F10.7 and F30 together as independent drivers in one analysis case
+
+**Geomagnetic-driver variant**:
+A matched analysis run using exactly one geomagnetic driver, either Ap or Kp, while holding the analysis target, cadence, solar proxy, preprocessing choices, and sample rows fixed. Selecting both drivers expands into separate runs rather than placing both related indices in one input matrix.
+_Avoid_: including Ap and Kp together as independent drivers in one analysis case
+
+**Core driver run and extension run**:
+A core driver run analyses one target with Mauna Loa tropospheric CO2, one **Solar-proxy variant**, and one **Geomagnetic-driver variant**. Selecting narrower-coverage SABER or **Ionospheric F2-layer peak state** inputs creates explicit extension runs on documented common-coverage windows while preserving the corresponding core run.
+_Avoid_: silently shortening the core run when an optional driver is selected; imputing optional products across unsupported periods
+
+**Extension overlap control**:
+A core-driver-only run restricted to the exact rows used by a SABER or ionospheric extension run. Every extension comparison retains the full-window core run, this overlap-window control, and the extension run so changes caused by the coverage window can be distinguished from changes caused by adding nodes.
+_Avoid_: comparing an extension only with a longer core run; discarding the full-window core result
+
+**SABER extension selection**:
+An arbitrary selected combination of SABER CO2 and NO direct-cooling products and OH and O2 emission-rate proxy products. Every product remains a separate typed node with its own role and units even when several coexist in one extension run.
+_Avoid_: calling OH or O2 a cooling rate; averaging cooling rates and emission proxies into one SABER variable
+
+**Ionospheric extension run**:
+An extension run that adds paired hmF2 and NmF2 nodes from one named ionospheric source and requires that source's geographic support to be compatible with the analysis target. The initial GIRO Lualualei source is restricted to Hawaii/Mauna Loa-compatible targets; COSMIC remains a separate future source rather than being averaged with GIRO.
+_Avoid_: attaching Lualualei as a global contextual driver; including hmF2 without NmF2
+
+**Cadence variant**:
+A matched analysis run using exactly one explicit temporal cadence. Selecting daily and 3-hour cadences expands into separate runs; daily is the initial supported cadence, while 3-hour runs remain unavailable until their alignment, aggregation, and low-frequency-driver rules are resolved.
+_Avoid_: mixed-cadence input matrices; silently upsampling or downsampling inputs
+
+**Bounded gap interpolation**:
+The explicit per-cadence policy for linearly filling only target gaps no longer than a configured `max_gap_steps`, bounded by real samples on both sides. Extrapolation is forbidden, longer gaps remain missing, and an imputation mask is retained in result provenance.
+_Avoid_: filling every internal gap; source-specific silent interpolation
+
 ## Relationships
 
 - **NRLMSISE-00**, **NRLMSIS 2.0**, and **NRLMSIS 2.1** are compared as empirical model baselines against observed or assimilated thermospheric density.
@@ -103,15 +203,39 @@ _Avoid_: using total electron content alone to claim that the ionosphere moved v
 - The **Mauna Loa HASDM subset** is used for local density and model-error analysis near the Mauna Loa \\(\mathrm{CO_2}\\) record.
 - **Daily log-density range** complements daily mean density in HASDM-based analyses, but it remains an exploratory variability diagnostic rather than a standalone causal estimate of CO2 cooling.
 - **Daily mean log-density notation** and **Daily log-density range notation** keep Results figures consistent by labelling daily mean \(\log_{10}\rho\) as \(\bar{\ell}_\rho\) and within-day log-density range as \(\Delta\ell_\rho\).
+- **Density target diagnostics** give observational and model sources the same target vocabulary while preserving the separate natural-log convention for model error.
 - **Dataset provenance and uncertainty** frames the datasets used in the thesis before the Results chapter, so that density, cooling, driver, and model-baseline products are not treated as equally direct observations.
 - **Activity-sigma bins** support conditional and binned dependence analysis by separating fitted \\(\mathrm{CO_2}\\)-related slopes across driver regimes while preserving sample-count caveats.
+- Each configured binning driver produces its own **Activity-binned product** within the same core run, preserving a direct relationship to the shared prepared inputs.
+- **Driver scatter products** expose the target's relationship with every selected input node at each target altitude while preserving altitude-resolved driver channels.
 - **Subplot-level Results interpretation** makes multi-panel Results figures explicit, while the scatter-plot grouping exception does not apply to **TU Delft density analysis** because mission and sampling differences are part of the result.
 - Sample-count-only panels support **Activity-sigma bin** interpretation and may be discussed together with the corresponding fitted-slope or fit-diagnostic panel rather than receiving a standalone paragraph.
 - **Binned-fit summary interpretation** keeps conditional heatmap prose focused on the scientifically relevant fitted-slope, correlation, and robustness patterns rather than repeating every annotation in each cell.
 - **Direct calendar-time density trend** provides a synthesis-level comparison with historical trend compilations, but it remains method-dependent and should be interpreted together with dependence analyses rather than as a standalone causal cooling estimate.
+- The **Solar-adjusted direct trend estimator** owns solar adjustment for the trend output; it does not mutate the shared analysis input used by other methods.
+- PCMCI\(^+\) runs compare the primary and robustness **PCMCI preprocessing profiles** explicitly; raw inputs remain diagnostic rather than a third peer causal claim.
+- The **Frequency-analysis method** follows the target's sampling contract, allowing one interface to return comparable spectrum products without hiding which estimator was used.
+- **Analysis capabilities** make invalid target, cadence, extension, and method combinations planning errors instead of runtime surprises.
+- **Analysis result artifacts** separate scientific calculation from rendering, so figures and composites can be regenerated and tested without repeating upstream analysis.
+- The **Study artifact graph** gives expanded runs shared, provenance-checked upstream work while keeping each analysis target and variant independently rerunnable.
+- **Study execution identity** separates human navigation from deterministic checkpoint validity, allowing equivalent cases to reuse artifacts across executions without hiding provenance changes.
+- An **Analysis selection and preset** makes computational and scientific scope visible while still allowing standard analysis bundles to be reused.
 - **Access-conditional thesis reproduction** persists local products between stages so an interrupted run or expensive analysis can resume without repeating valid upstream work.
 - A **Thesis result workflow** is the reader-facing unit of **Access-conditional thesis reproduction**, while source-specific acquisition and preparation steps remain independently runnable provenance operations.
 - **Ionospheric F2-layer peak state** complements neutral-density and cooling diagnostics when studying thermosphere--ionosphere coupling; hmF2 represents peak position while NmF2 prevents a height change from being conflated with a change in peak electron density.
+- Each pipeline run has exactly one **Analysis target**; selecting multiple density products or model-error families produces independent runs that may share the same driver and preprocessing selections. Descriptive outputs may retain all available altitudes, while causal-discovery runs use explicit **PCMCI altitude groups**.
+- Empirical-model density and error targets are evaluated on a **Reference sampling frame** from TU Delft or HASDM. **Global mean thermospheric density** remains observation-only unless its sampling geometry is recovered.
+- Multi-model studies derive a **Paired model comparison sample** from the reference frame before model evaluation, preserving fair JB2006/JB2008 and MSIS-family comparisons.
+- A **Model density source** may be executable or precomputed. Native-grid WACCM-X analysis does not require an observational reference, while WACCM-X model-error comparison does require alignment to a **Reference sampling frame**.
+- F10.7 and F30 are alternative **Solar-proxy variants**, not simultaneous drivers; their matched runs support a direct sensitivity comparison.
+- Ap and Kp are alternative **Geomagnetic-driver variants**, not simultaneous drivers; their matched runs support a direct sensitivity comparison.
+- SABER and ionospheric inputs produce explicit extension runs matched to a **Core driver run**, so narrower product availability is visible rather than silently changing the core sample.
+- Every optional extension has an **Extension overlap control** on identical rows as well as the full-window core run.
+- A **SABER extension selection** may contain any species combination, but it preserves direct-cooling and emission-proxy products as distinct typed nodes.
+- An **Ionospheric extension run** keeps hmF2 and NmF2 paired and rejects target/source combinations without compatible geographic support.
+- Daily and 3-hour analyses are separate **Cadence variants**; unsupported cadence/source combinations fail during planning rather than being silently resampled.
+- **Bounded gap interpolation** makes any filled target values visible and reproducible while preventing long gaps or edge gaps from being invented.
+- A **Physical PCMCI lag window** preserves the same scientific lag meaning across **Cadence variants**, while each expanded run retains the exact converted step indices needed by the PCMCI implementation.
 
 ## Example dialogue
 
@@ -178,6 +302,7 @@ _Avoid_: using total electron content alone to claim that the ionosphere moved v
 - "TUDelft" and "TuDelft" are shorthand/capitalization slips; resolved: use **TU Delft** consistently when referring to the institution or dataset.
 - "Each subplot" means **Subplot-level Results interpretation**, with only the stated sample-count support-panel and correlation-scatter grouping exceptions.
 - "Analyse the heatmap" does not mean describing every annotated metric; resolved: use **Binned-fit summary interpretation** and discuss only scientifically relevant trends.
+- Joint solar-and-geomagnetic binning was considered; deferred as low-priority future work. If revisited, use a two-dimensional solar-bin by geomagnetic-bin product with an explicit, accessible colour encoding rather than adding it to the initial pipeline interface.
 - "Density trend" in the synthesis figure means **Direct calendar-time density trend** for the current thesis products, not a fully deconfounded literature-equivalent secular \(\mathrm{CO_2}\) trend.
 - "Replicate the results" was ambiguous about distributing prepared data; resolved: use **Access-conditional thesis reproduction**, keep large datasets out of the repository, and persist ignored local checkpoints between pipeline stages.
 - The proposed "dataset axis" mixed external sources, model-generated baselines, and model-error products; resolved: reader-facing execution mirrors **Thesis result workflows**, while acquisition remains split by external source dataset.
