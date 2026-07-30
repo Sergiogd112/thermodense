@@ -1,0 +1,43 @@
+# THROWAWAY issue #7 interface sample. It does not configure production science.
+[study]
+id = "issue-7-study-planner"
+
+[defaults]
+cadences = ["daily"]
+window = "2002-01-01..2024-12-31"
+solar_proxies = ["F10.7", "F30"]
+geomagnetic_drivers = ["Ap", "Kp"]
+solar_variant_rows = "exact-common-quality"
+pcmci_preprocessing_profiles = ["primary-detrended-anomaly", "robustness-seasonal-anomaly"]
+
+[presets]
+dependence = ["dependence"]
+direct_trend = ["direct_trend"]
+pcmci = ["pcmci"]
+
+[[targets]]
+id = "global-density"
+kind = "density"
+source_id = "global-mean-thermospheric-density"
+products = ["daily-mean-log-density", "daily-log-density-range"]
+preset = "dependence"
+extension = { name = "saber-co2", source_id = "saber-co2-cooling", overlap_window = "2002-01-01..2020-12-31" }
+
+[[targets]]
+id = "msis-baseline"
+kind = "model_density"
+source_id = "mauna-loa-hasdm-frame"
+products = ["nrlmsise-00", "nrlmsis-2.1"]
+preset = "direct_trend"
+
+[[targets]]
+id = "hasdm-error"
+kind = "model_error"
+source_id = "mauna-loa-hasdm-frame"
+products = ["nrlmsise-00", "nrlmsis-2.1"]
+preset = "pcmci"
+independence_tests = ["parcorr", "cmiknn", "gpdc", "gpdctorch"]
+pcmci_altitude_groups = [[325, 500], [825]]
+min_lag = "0d"
+max_lag = "180d"
+extension = { name = "saber-co2", source_id = "saber-co2-cooling", overlap_window = "2002-01-01..2020-12-31" }

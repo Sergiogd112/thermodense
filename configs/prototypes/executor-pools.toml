@@ -1,0 +1,84 @@
+# THROWAWAY generic execution capacities. No endpoint or scheduler integration exists.
+[[pools]]
+id = "local-cpu"
+adapter_kind = "local"
+enabled = true # explicit opt-in; the initiating host may also be controller-only
+slots = 2
+resource_classes = ["small-cpu-prep", "cpu-parcorr"]
+data_localities = ["shared"]
+capabilities = ["parcorr"]
+tick_multipliers = { small-cpu-prep = 1.0, cpu-parcorr = 1.5 }
+quota_group = "local-cpu"
+quota_limit = 2
+available = true
+
+[[pools]]
+id = "sge-cpu"
+adapter_kind = "sge"
+enabled = true
+slots = 10
+resource_classes = ["small-cpu-prep", "cpu-parcorr", "heavy-nonlinear-cpu"]
+data_localities = ["shared"]
+capabilities = ["parcorr"]
+tick_multipliers = { small-cpu-prep = 0.5, cpu-parcorr = 0.75, heavy-nonlinear-cpu = 1.0 }
+quota_group = "sge-cpu"
+quota_limit = 10
+available = true
+
+[[pools]]
+id = "sge-gpu"
+adapter_kind = "sge"
+enabled = true
+slots = 1
+resource_classes = ["gpu-method"]
+data_localities = ["shared"]
+capabilities = []
+tick_multipliers = { gpu-method = 0.5 }
+quota_group = "sge-cpu"
+quota_limit = 10
+available = true
+
+[[pools]]
+id = "archmini"
+adapter_kind = "ssh"
+enabled = false
+available = false
+slots = 1
+resource_classes = ["small-cpu-prep", "cpu-parcorr", "heavy-nonlinear-cpu", "gpu-method"]
+data_localities = ["shared"]
+capabilities = [] # probe-driven: no unverified capabilities initially
+tick_multipliers = {}
+quota_group = "archmini"
+quota_limit = 1 # provisional until the capability probe sets the real limit
+
+[[pools]]
+id = "kaggle-cpu"
+adapter_kind = "kaggle"
+enabled = false
+available = false
+slots = 1
+resource_classes = ["cpu-parcorr", "heavy-nonlinear-cpu"]
+data_localities = ["shared"]
+capabilities = []
+tick_multipliers = { cpu-parcorr = 1.0, heavy-nonlinear-cpu = 1.0 }
+quota_group = "kaggle"
+quota_limit = 1
+minimum_job_ticks = 2 # provisional illustrative coarse-job gate
+startup_ticks = 2.0 # provisional illustrative overhead
+staging_ticks = 1.0 # provisional illustrative overhead
+
+[[pools]]
+id = "kaggle-gpu"
+adapter_kind = "kaggle"
+enabled = false
+available = false
+slots = 1
+resource_classes = ["gpu-method"]
+data_localities = ["shared"]
+capabilities = [] # no nonlinear capability before the frozen gate
+tick_multipliers = { gpu-method = 1.0 }
+quota_group = "kaggle"
+quota_limit = 1
+minimum_job_ticks = 2 # provisional illustrative coarse-job gate
+startup_ticks = 2.0 # provisional illustrative overhead
+staging_ticks = 1.0 # provisional illustrative overhead
