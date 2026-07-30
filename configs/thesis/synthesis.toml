@@ -1,0 +1,4 @@
+workflow = "synthesis"
+description = "Cross-product direct calendar-time density trend synthesis workflow."
+migration = "unavailable: stage implementations are not yet migrated"
+available_stages = []

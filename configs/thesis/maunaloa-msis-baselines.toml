@@ -1,0 +1,4 @@
+workflow = "maunaloa-msis-baselines"
+description = "Mauna Loa MSIS density baselines Results workflow."
+migration = "unavailable: stage implementations are not yet migrated"
+available_stages = []

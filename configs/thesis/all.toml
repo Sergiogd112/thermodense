@@ -1,0 +1,4 @@
+workflow = "all"
+description = "All thesis Results workflows in section order."
+migration = "unavailable: constituent stage implementations are not yet migrated"
+available_stages = []

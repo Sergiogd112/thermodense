@@ -1,0 +1,4 @@
+workflow = "tudelft-density"
+description = "Observation-only TU Delft density analysis Results workflow."
+migration = "unavailable: stage implementations are not yet migrated"
+available_stages = []
