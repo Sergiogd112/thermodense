@@ -1,0 +1,40 @@
+benchmark_version = "pcmci-methods-synthetic-1"
+schema_version = "1"
+synthetic = true
+seed = 20260731
+nodes = 5
+method_order = ["parcorr", "cmiknn", "gpdc"]
+default_timeout_seconds = 1800
+default_threads = 1
+
+[[levels]]
+name = "small"
+samples = 512
+tau_max = 7
+
+[[levels]]
+name = "medium"
+samples = 2048
+tau_max = 30
+
+[[levels]]
+name = "representative"
+samples = 8400
+tau_max = 180
+
+[methods.parcorr]
+significance = "analytic"
+
+[methods.cmiknn]
+significance = "shuffle_test"
+sig_samples = 20
+sig_blocklength = 4
+knn = 0.1
+shuffle_neighbors = 5
+workers = 1
+
+[methods.gpdc]
+significance = "analytic"
+
+[deferred.gpdctorch]
+reason = "Verified Auriga driver is incompatible with the locked Torch CUDA 13 environment."
