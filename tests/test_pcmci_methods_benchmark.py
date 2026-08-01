@@ -118,6 +118,7 @@ def test_result_schema_and_digest_are_stable_for_mocked_case(
     assert benchmark.compact_result_digest(matrices) == expected_digest
     assert "git_commit" in row
     assert row["spec_digest"] == benchmark.spec_digest()
+    assert row["timeout_seconds"] == 1.0
 
 
 def test_isolated_case_timeout_uses_harmless_child() -> None:

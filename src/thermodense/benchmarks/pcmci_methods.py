@@ -381,6 +381,7 @@ def _base_row(case: Case, args: argparse.Namespace, threads: int) -> dict[str, A
         "environment_fingerprint": args.environment_fingerprint,
         "git_commit": git_commit(),
         "spec_digest": spec_digest(),
+        "timeout_seconds": args.timeout,
         "synthetic": True,
         "method": case.method,
         "level": case.level,
