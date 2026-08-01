@@ -125,12 +125,12 @@ def generate_synthetic_data(samples: int, *, level_index: int) -> np.ndarray:
     return (data - data.mean(axis=0)) / data.std(axis=0, ddof=0)
 
 
-def method_settings(method: str) -> dict[str, Any]:
+def method_settings(method: str, cmiknn_workers: int | None = None) -> dict[str, Any]:
     settings: dict[str, Any] = {"pc_alpha": 0.05, "alpha_level": 0.05}
     if method == "parcorr":
         return settings | {"significance": "analytic"}
     if method == "cmiknn":
-        return settings | {
+        result = settings | {
             "significance": "shuffle_test",
             "sig_samples": 20,
             "sig_blocklength": 4,
@@ -138,6 +138,9 @@ def method_settings(method: str) -> dict[str, Any]:
             "shuffle_neighbors": 5,
             "workers": 1,
         }
+        if cmiknn_workers is not None:
+            result = result | {"workers": cmiknn_workers}
+        return result
     if method == "gpdc":
         return settings | {"significance": "analytic"}
     raise ValueError(f"Unknown benchmark method: {method}")
@@ -217,7 +220,7 @@ def git_commit() -> str | None:
     return result.stdout.strip() or None
 
 
-def run_pcmci_case(case: Case) -> dict[str, Any]:
+def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str, Any]:
     """Run one real PCMCI case; imported dependencies stay inside the child."""
     from tigramite import data_processing as pp
     from tigramite.independence_tests.cmiknn import CMIknn
@@ -227,7 +230,7 @@ def run_pcmci_case(case: Case) -> dict[str, Any]:
 
     level_index = next(index for index, level in enumerate(LEVELS) if level[0] == case.level)
     data = generate_synthetic_data(case.samples, level_index=level_index)
-    settings = method_settings(case.method)
+    settings = method_settings(case.method, cmiknn_workers)
     # CMIknn's shuffle test draws from the process-global RNGs; reseed them per
     # case so every run of a given (method, level) is bit-reproducible.
     derived = int(
@@ -245,7 +248,7 @@ def run_pcmci_case(case: Case) -> dict[str, Any]:
             sig_blocklength=4,
             knn=0.1,
             shuffle_neighbors=5,
-            workers=1,
+            workers=settings["workers"],
         )
     else:
         test = GPDC(significance="analytic")
@@ -271,7 +274,7 @@ def _child_main(args: argparse.Namespace) -> int:
     case = Case(args.method, args.level, args.samples, args.tau_max)
     try:
         started = time.monotonic()
-        payload = run_pcmci_case(case)
+        payload = run_pcmci_case(case, cmiknn_workers=args.cmiknn_workers)
         payload["status"] = "succeeded"
         payload["wall_seconds"] = time.monotonic() - started
     except Exception as error:  # Child exceptions must become durable parent rows.
@@ -301,7 +304,11 @@ def _terminate_process_tree(process: subprocess.Popen) -> None:
 
 
 def _run_isolated_case(
-    case: Case, timeout: float, threads: int, command: list[str] | None = None
+    case: Case,
+    timeout: float,
+    threads: int,
+    command: list[str] | None = None,
+    cmiknn_workers: int | None = None,
 ) -> dict[str, Any]:
     child_command = command or [
         sys.executable,
@@ -317,6 +324,8 @@ def _run_isolated_case(
         "--tau-max",
         str(case.tau_max),
     ]
+    if cmiknn_workers is not None:
+        child_command += ["--cmiknn-workers", str(cmiknn_workers)]
     environment = os.environ.copy()
     environment.update(_thread_environment(threads))
     started = time.monotonic()
@@ -389,7 +398,7 @@ def _base_row(case: Case, args: argparse.Namespace, threads: int) -> dict[str, A
         "nodes": NODES,
         "tau_max": case.tau_max,
         "seed": SEED,
-        "settings": method_settings(case.method) | {"threads": threads},
+        "settings": method_settings(case.method, args.cmiknn_workers) | {"threads": threads},
         "package_versions": _package_versions(),
         "status": "pending",
         "skip_reason": None,
@@ -431,7 +440,7 @@ def run_benchmark(args: argparse.Namespace) -> int:
             row.update(status="skipped", skip_reason=blocked[case.method], wall_seconds=0.0)
         else:
             print(f"running {case.method}/{case.level}", file=sys.stderr, flush=True)
-            row.update(_run_isolated_case(case, args.timeout, threads))
+            row.update(_run_isolated_case(case, args.timeout, threads, cmiknn_workers=args.cmiknn_workers))
             if row["status"] != "succeeded":
                 blocked[case.method] = (
                     f"previous {case.level} case {row['status']}: "
@@ -458,11 +467,18 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--levels", choices=tuple(level[0] for level in LEVELS), nargs="+")
     run.add_argument("--threads", type=int)
     run.add_argument("--overwrite", action="store_true")
+    run.add_argument(
+        "--cmiknn-workers",
+        type=int,
+        default=None,
+        help="spec-divergent probe override: CMIknn scipy workers (frozen spec pins 1)",
+    )
     case = commands.add_parser("case", help=argparse.SUPPRESS)
     case.add_argument("--method", choices=METHODS, required=True)
     case.add_argument("--level", choices=tuple(level[0] for level in LEVELS), required=True)
     case.add_argument("--samples", type=int, required=True)
     case.add_argument("--tau-max", type=int, required=True)
+    case.add_argument("--cmiknn-workers", type=int, default=None)
     return result
 
 

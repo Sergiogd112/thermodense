@@ -63,12 +63,26 @@ def test_spec_toml_parity_with_module_constants() -> None:
     assert len(document["spec_digest"]) == 64
 
 
+def test_cmiknn_workers_override_is_probe_only() -> None:
+    assert benchmark.method_settings("cmiknn")["workers"] == 1
+    assert benchmark.method_settings("cmiknn", cmiknn_workers=24)["workers"] == 24
+    assert benchmark.method_settings("cmiknn", cmiknn_workers=24)["sig_samples"] == 20
+    # The override must not leak into other methods or into the frozen default.
+    assert benchmark.method_settings("parcorr", cmiknn_workers=24) == benchmark.method_settings(
+        "parcorr"
+    )
+    assert benchmark.method_settings("gpdc", cmiknn_workers=24) == benchmark.method_settings(
+        "gpdc"
+    )
+    assert benchmark.method_settings("cmiknn")["workers"] == 1
+
+
 def test_progressive_stop_skips_only_the_failed_method(
     tmp_path: Path, monkeypatch
 ) -> None:
     calls: list[tuple[str, str]] = []
 
-    def fake_case(case, timeout, threads):
+    def fake_case(case, timeout, threads, cmiknn_workers=None):
         calls.append((case.method, case.level))
         if case.method == "cmiknn" and case.level == "small":
             return {"status": "failed", "failure_reason": "fixture failure"}
@@ -99,7 +113,7 @@ def test_result_schema_and_digest_are_stable_for_mocked_case(
     }
     expected_digest = benchmark.compact_result_digest(matrices)
 
-    def fake_case(case, timeout, threads):
+    def fake_case(case, timeout, threads, cmiknn_workers=None):
         return {
             "status": "succeeded",
             "matrix_shapes": {name: list(value.shape) for name, value in matrices.items()},
@@ -154,6 +168,7 @@ def _run_args(
         host_label="test-host",
         environment_label="test-environment",
         environment_fingerprint="test-fingerprint",
+        cmiknn_workers=None,
     )
 
 
