@@ -134,7 +134,8 @@ def test_tiny_real_parcorr_pcmciplus_case(tmp_path: Path) -> None:
     assert len(result["result_digest"]) == 64
     assert "alpha_level" not in result["settings"]
     with np.load(artifact, allow_pickle=False) as saved:
-        assert sorted(saved.files) == ["graph", "p_matrix", "val_matrix"]
+        assert sorted(saved.files) == ["graph", "node_names", "p_matrix", "val_matrix"]
+        assert saved["node_names"].tolist() == NODE_COLUMNS
         assert saved["graph"].shape == tuple(result["matrix_shapes"]["graph"])
         assert saved["p_matrix"].shape == tuple(result["matrix_shapes"]["p_matrix"])
         assert saved["val_matrix"].shape == tuple(result["matrix_shapes"]["val_matrix"])
@@ -168,7 +169,9 @@ def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -
                 name: list(value.shape) for name, value in matrices.items()
             },
             "result_digest": pcmci_real.runtime.compact_result_digest(matrices),
-            "artifact": pcmci_real._write_result_artifact(artifact, matrices),
+            "artifact": pcmci_real.runtime.write_npz_artifact(
+                artifact, matrices, node_names=NODE_COLUMNS
+            ),
         }
 
     monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
@@ -178,13 +181,19 @@ def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -
     assert "calendar month/day" in row["preprocessing"]["seasonal_climatology"]
     assert row["preprocessing"]["february_29_has_distinct_climatology"] is True
     assert row["artifact"]["format"] == "npz-compressed"
-    assert row["artifact"]["keys"] == ["graph", "p_matrix", "val_matrix"]
+    assert row["artifact"]["keys"] == [
+        "graph",
+        "node_names",
+        "p_matrix",
+        "val_matrix",
+    ]
     artifact = Path(row["artifact"]["path"])
     assert row["artifact"]["name"] == artifact.name
     assert (
         row["artifact"]["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
     )
     with np.load(artifact, allow_pickle=False) as saved:
+        assert saved["node_names"].tolist() == NODE_COLUMNS
         for name, expected in matrices.items():
             assert np.array_equal(saved[name], expected)
 

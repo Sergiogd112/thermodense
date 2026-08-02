@@ -11,13 +11,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 import json
-import os
 from pathlib import Path
 import random
 import resource
 import shutil
 import sys
-import tempfile
 import time
 from typing import Any
 
@@ -242,35 +240,6 @@ def real_method_settings(method: str, cmiknn_workers: int) -> dict[str, Any]:
     return settings
 
 
-def _write_result_artifact(path: Path, matrices: dict[str, Any]) -> dict[str, Any]:
-    """Atomically persist the canonical PCMCI+ matrices in compressed NPZ."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        dir=path.parent, suffix=".npz", delete=False
-    ) as handle:
-        temporary_path = Path(handle.name)
-        try:
-            np.savez_compressed(handle, **matrices)
-            handle.flush()
-            os.fsync(handle.fileno())
-        except BaseException:
-            temporary_path.unlink(missing_ok=True)
-            raise
-    os.replace(temporary_path, path)
-    directory = os.open(path.parent, os.O_RDONLY)
-    try:
-        os.fsync(directory)
-    finally:
-        os.close(directory)
-    return {
-        "path": str(path),
-        "name": path.name,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "format": "npz-compressed",
-        "keys": sorted(matrices),
-    }
-
-
 def run_pcmciplus(
     input_data: RealInput,
     method: str,
@@ -333,7 +302,11 @@ def run_pcmciplus(
         "process_max_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         * 1024,
     } | (
-        {"artifact": _write_result_artifact(artifact_path, matrices)}
+        {
+            "artifact": runtime.write_npz_artifact(
+                artifact_path, matrices, node_names=NODE_COLUMNS
+            )
+        }
         if artifact_path
         else {}
     )

@@ -11,6 +11,7 @@ from pathlib import Path
 import platform
 import signal
 import subprocess
+import tempfile
 import time
 from typing import Any
 
@@ -63,6 +64,43 @@ def compact_result_digest(results: dict[str, Any]) -> str:
     }
     encoded = json.dumps(digest_input, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def write_npz_artifact(
+    path: Path,
+    matrices: dict[str, Any],
+    *,
+    node_names: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Atomically persist canonical result matrices in compressed NPZ."""
+    contents = dict(matrices)
+    if node_names is not None:
+        contents["node_names"] = np.asarray(node_names)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, suffix=".npz", delete=False
+    ) as handle:
+        temporary_path = Path(handle.name)
+        try:
+            np.savez_compressed(handle, **contents)
+            handle.flush()
+            os.fsync(handle.fileno())
+        except BaseException:
+            temporary_path.unlink(missing_ok=True)
+            raise
+    os.replace(temporary_path, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return {
+        "path": str(path),
+        "name": path.name,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "format": "npz-compressed",
+        "keys": sorted(contents),
+    }
 
 
 def package_versions() -> dict[str, str]:
