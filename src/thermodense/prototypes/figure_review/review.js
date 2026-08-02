@@ -565,6 +565,7 @@ function renderA() {
       })
     );
   }
+  detailHost.className = "a-detail-host";
   wrap.append(detailHost);
 
   const hint = document.createElement("div");
@@ -573,7 +574,8 @@ function renderA() {
     "<kbd>j</kbd>/<kbd>k</kbd> prev/next · " +
     "<kbd>i</kbd> include <kbd>s</kbd> supplement <kbd>r</kbd> revise <kbd>e</kbd> exclude · " +
     "<kbd>x</kbd> clear decision · <kbd>←</kbd>/<kbd>→</kbd> switch variant";
-  app.append(wrap, hint);
+  list.append(hint);
+  app.append(wrap);
 }
 
 /* ---------------- VARIANT B: board ---------------- */

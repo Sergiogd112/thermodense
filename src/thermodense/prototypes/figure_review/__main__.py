@@ -22,10 +22,18 @@ PORT = 8124
 HOST = "127.0.0.1"
 
 
+class PrototypeHandler(http.server.SimpleHTTPRequestHandler):
+    """Serve mutable prototype assets without browser caching."""
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+
 def main() -> None:
     os.chdir(HERE)
     handler = functools.partial(
-        http.server.SimpleHTTPRequestHandler, directory=HERE
+        PrototypeHandler, directory=HERE
     )
     httpd = http.server.ThreadingHTTPServer((HOST, PORT), handler)
     url = f"http://{HOST}:{PORT}/?variant=A"
