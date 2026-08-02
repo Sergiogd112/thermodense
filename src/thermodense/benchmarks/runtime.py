@@ -103,6 +103,46 @@ def write_npz_artifact(
     }
 
 
+def write_jsonl_artifact(path: Path, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Atomically persist machine-readable derived rows as durable JSONL."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, suffix=".jsonl", delete=False
+    ) as handle:
+        temporary_path = Path(handle.name)
+        try:
+            for row in rows:
+                handle.write(
+                    (
+                        json.dumps(
+                            row,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        )
+                        + "\n"
+                    ).encode()
+                )
+            handle.flush()
+            os.fsync(handle.fileno())
+        except BaseException:
+            temporary_path.unlink(missing_ok=True)
+            raise
+    os.replace(temporary_path, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return {
+        "path": str(path),
+        "name": path.name,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "format": "jsonl",
+        "row_count": len(rows),
+    }
+
+
 def package_versions() -> dict[str, str]:
     """Report runtime package versions without requiring optional packages."""
     versions = {"python": platform.python_version(), "platform": platform.platform()}

@@ -104,7 +104,7 @@ def test_run_retains_artifact_and_surrogate_summary_in_jsonl(
             "artifact": surrogates.runtime.write_npz_artifact(
                 artifact, matrices, node_names=["physical"]
             ),
-            "surrogate_link_summary": surrogates._write_csv_atomic(
+            "surrogate_link_summary": surrogates.runtime.write_jsonl_artifact(
                 summary,
                 [
                     {
@@ -145,7 +145,7 @@ def test_tiny_parcorr_case_writes_augmented_artifact_and_summary(
         {"node_order": NODE_COLUMNS},
     )
     artifact = tmp_path / "result.npz"
-    summary = tmp_path / "surrogate_links.csv"
+    summary = tmp_path / "surrogate_links.jsonl"
 
     result = surrogates.run_pcmciplus(
         input_data,

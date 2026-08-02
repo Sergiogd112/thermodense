@@ -9,22 +9,17 @@ from __future__ import annotations
 
 import argparse
 from datetime import UTC, datetime
-import hashlib
 import json
-import os
 from pathlib import Path
 import random
 import resource
 import shutil
 import sys
-import tempfile
 import time
 from typing import Any
 
 import numpy as np
-import polars as pl
-
-from thermodense.benchmarks import pcmci_real, runtime
+from thermodense.benchmarks import pcmci_real, pcmci_control_graph, runtime
 from thermodense.benchmarks.real_data import (
     DEFAULT_OUTPUT as DEFAULT_INPUT,
     NODE_COLUMNS,
@@ -97,116 +92,8 @@ def generate_surrogates(
     return data, settings
 
 
-def build_link_assumptions(
-    node_names: list[str], tau_max: int, f107_node: str = "f10_7_center81"
-) -> dict[int, dict[tuple[int, int], str]]:
-    """Apply the F10.7-exogenous policy to an arbitrary augmented node list."""
-    f107_index = node_names.index(f107_node)
-    assumptions: dict[int, dict[tuple[int, int], str]] = {
-        target: {} for target in range(len(node_names))
-    }
-    for target in range(len(node_names)):
-        for cause in range(len(node_names)):
-            for lag in range(1, tau_max + 1):
-                if target == f107_index and cause != f107_index:
-                    continue
-                assumptions[target][(cause, -lag)] = "-?>"
-    for cause in range(len(node_names)):
-        for target in range(cause + 1, len(node_names)):
-            if cause == f107_index:
-                assumptions[target][(f107_index, 0)] = "-?>"
-            elif target == f107_index:
-                assumptions[cause][(f107_index, 0)] = "-?>"
-            else:
-                assumptions[target][(cause, 0)] = "o?o"
-    return assumptions
-
-
-def selected_surrogate_links(
-    results: dict[str, np.ndarray], node_names: list[str], surrogate_names: set[str]
-) -> list[dict[str, str | int | float]]:
-    """Return one canonical row per selected graph link involving a control."""
-    rows: list[dict[str, str | int | float]] = []
-    graph, p_matrix, val_matrix = (
-        results["graph"],
-        results["p_matrix"],
-        results["val_matrix"],
-    )
-    for cause_index, cause in enumerate(node_names):
-        for target_index, target in enumerate(node_names):
-            if cause not in surrogate_names and target not in surrogate_names:
-                continue
-            for lag in range(graph.shape[2]):
-                graph_mark = str(graph[cause_index, target_index, lag])
-                if not graph_mark or (lag == 0 and graph_mark == "<--"):
-                    continue
-                if (
-                    lag == 0
-                    and graph_mark in {"o-o", "x-x"}
-                    and cause_index > target_index
-                ):
-                    continue
-                if lag > 0 and graph_mark != "-->":
-                    continue
-                if cause in surrogate_names and target in surrogate_names:
-                    relation = "surrogate↔surrogate"
-                elif cause in surrogate_names:
-                    relation = "surrogate→physical"
-                else:
-                    relation = "physical→surrogate"
-                rows.append(
-                    {
-                        "relation": relation,
-                        "cause": cause,
-                        "target": target,
-                        "lag": lag,
-                        "graph_mark": graph_mark,
-                        "p_value": float(p_matrix[cause_index, target_index, lag]),
-                        "val": float(val_matrix[cause_index, target_index, lag]),
-                    }
-                )
-    return rows
-
-
-def _write_csv_atomic(
-    path: Path, rows: list[dict[str, str | int | float]]
-) -> dict[str, Any]:
-    schema = {
-        "relation": pl.String,
-        "cause": pl.String,
-        "target": pl.String,
-        "lag": pl.Int64,
-        "graph_mark": pl.String,
-        "p_value": pl.Float64,
-        "val": pl.Float64,
-    }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        dir=path.parent, suffix=".csv", delete=False
-    ) as handle:
-        temporary_path = Path(handle.name)
-    try:
-        (
-            pl.DataFrame(rows, schema=schema) if rows else pl.DataFrame(schema=schema)
-        ).write_csv(temporary_path)
-        with temporary_path.open("rb") as handle:
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-        directory = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
-    return {
-        "path": str(path),
-        "name": path.name,
-        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-        "format": "csv",
-        "row_count": len(rows),
-    }
+build_link_assumptions = pcmci_control_graph.build_link_assumptions
+selected_surrogate_links = pcmci_control_graph.selected_control_links
 
 
 def run_pcmciplus(
@@ -275,7 +162,7 @@ def run_pcmciplus(
             artifact_path, matrices, node_names=node_names
         )
     if summary_path is not None:
-        payload["surrogate_link_summary"] = _write_csv_atomic(
+        payload["surrogate_link_summary"] = runtime.write_jsonl_artifact(
             summary_path, summary_rows
         )
     return payload
@@ -443,7 +330,7 @@ def run(args: argparse.Namespace) -> int:
             args,
             threads,
             artifact_directory / "parcorr.npz",
-            artifact_directory / "surrogate_links.csv",
+            artifact_directory / "surrogate_links.jsonl",
         )
     )
     runtime.append_jsonl(args.output, row)

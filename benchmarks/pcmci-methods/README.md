@@ -43,3 +43,18 @@ The real runner preserves the consecutive daily calendar, retains unavailable
 CO2 days as missing observations, and writes both provenance JSONL and canonical
 compressed NPZ matrices. GPDC is deferred for this stage because the synthetic
 CPU results project a multi-week representative run.
+
+The separate ParCorr-only IAAFT and circular-shift control robustness runner
+does not modify either primary runner. It preprocesses the physical nodes once,
+then appends one source-missing-mask-preserving IAAFT and one
+missing-mask-preserving circular-shift
+control per node without preprocessing the controls again:
+
+```sh
+uv run python -m thermodense.benchmarks.pcmci_real_controls run \
+  --output results-real-controls.jsonl --tau-max 180
+```
+
+Its JSONL records deterministic seeds, temporary IAAFT fill and spectral-error
+diagnostics, and shift offsets. The accompanying NPZ includes augmented node
+names; the selected-link JSONL includes control family/source classifications.
