@@ -20,6 +20,10 @@ import matplotlib.pyplot as plt  # noqa: E402
 import networkx as nx  # noqa: E402
 import numpy as np  # noqa: E402
 
+# Keep the publication artifact friendly to pdfLaTeX/LuaLaTeX: vector graphics
+# with embedded TrueType fonts rather than Matplotlib's default Type 3 glyphs.
+plt.rcParams.update({"pdf.fonttype": 42, "ps.fonttype": 42})
+
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE.parents[3] / "benchmarks" / "pcmci-methods" / "results" / "real-1" / "local"
 FIG_DIR = HERE / "figures"
@@ -301,9 +305,21 @@ def main() -> None:
     }
     for name, fig in figs.items():
         path = FIG_DIR / name
+        pdf_path = path.with_suffix(".pdf")
         fig.savefig(path, dpi=150)
+        fig.savefig(
+            pdf_path,
+            format="pdf",
+            bbox_inches="tight",
+            metadata={
+                "Creator": "thermodense figure-review prototype",
+                "CreationDate": None,
+                "ModDate": None,
+            },
+        )
         plt.close(fig)
         print(f"wrote {path}  sha256={sha256(path)[:16]}…")
+        print(f"wrote {pdf_path}  sha256={sha256(pdf_path)[:16]}…")
 
     artifacts = {
         "fig-01": [
@@ -366,11 +382,15 @@ def main() -> None:
         ("fig-03", "figure-03-surrogates.png"),
     ]:
         path = FIG_DIR / fname
+        pdf_path = path.with_suffix(".pdf")
         figures.append({
             "id": fid,
             "title": titles[fid],
             "src": f"figures/{fname}",
             "sha256": sha256(path),
+            "publicationSrc": f"figures/{pdf_path.name}",
+            "publicationSha256": sha256(pdf_path),
+            "publicationFormat": "application/pdf",
             "caption": captions[fid],
             "panels": [{"id": p, "label": lab} for p, lab in panels[fid]],
             "claimCardIds": ["claim-01", "claim-02"] if fid in ("fig-01", "fig-02") else [],
@@ -393,7 +413,7 @@ def main() -> None:
 
     data = {
         "prototype": True,
-        "figureSetVersion": "real-1-local-v1",
+        "figureSetVersion": "real-1-local-v2",
         "figures": figures,
         "claims": [
             {

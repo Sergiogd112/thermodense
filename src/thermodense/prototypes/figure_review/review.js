@@ -26,6 +26,7 @@ const VERDICTS = ["supported", "unsupported", "needs-work", "not-assessed"];
 const state = {
   data: null,
   variant: initVariant(),
+  appearance: "system",
   selectedFigure: null,
   selectedClaim: null,
   compareSel: [],
@@ -83,27 +84,36 @@ function setProfile(profile) {
   render();
 }
 
+function setAppearance(appearance) {
+  state.appearance = appearance;
+  if (appearance === "system") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.dataset.theme = appearance;
+  }
+}
+
 /* ---------------- advisory checks ---------------- */
 
-async function integrityChip(fig) {
+async function integrityChip(src, expectedSha256, label) {
   const el = document.createElement("span");
   el.className = "chip";
-  el.textContent = "SHA-256 …";
+  el.textContent = `${label} SHA-256 …`;
   try {
-    const buf = await (await fetch(fig.src)).arrayBuffer();
+    const buf = await (await fetch(src)).arrayBuffer();
     const digest = await crypto.subtle.digest("SHA-256", buf);
     const hex = [...new Uint8Array(digest)]
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-    const ok = hex === fig.sha256;
+    const ok = hex === expectedSha256;
     el.className = "chip " + (ok ? "ok" : "bad");
     el.textContent = ok
-      ? "SHA-256 verified against artifact"
-      : "SHA-256 MISMATCH — artifact changed";
+      ? `${label} SHA-256 verified`
+      : `${label} SHA-256 MISMATCH`;
     el.title = "advisory integrity check, not scientific approval";
   } catch {
     el.className = "chip warn";
-    el.textContent = "SHA-256 unavailable (needs http://localhost)";
+    el.textContent = `${label} SHA-256 unavailable`;
   }
   return el;
 }
@@ -323,6 +333,24 @@ function header() {
   profile.onchange = () => setProfile(profile.value);
   bar.append(profile);
 
+  const appearance = document.createElement("select");
+  appearance.className = "appearance-select";
+  appearance.title = "Appearance";
+  appearance.setAttribute("aria-label", "Appearance");
+  for (const [value, label] of [
+    ["system", "Appearance: System"],
+    ["light", "Appearance: Light"],
+    ["dark", "Appearance: Dark"],
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    appearance.append(option);
+  }
+  appearance.value = state.appearance;
+  appearance.onchange = () => setAppearance(appearance.value);
+  bar.append(appearance);
+
   const exp = document.createElement("button");
   exp.className = "primary";
   exp.textContent = "Export manifest";
@@ -369,9 +397,24 @@ async function figureDetail(figId, opts = {}) {
   main.append(h);
 
   const chips = advisoryChips(f);
-  const chip = await integrityChip(f);
-  chips.prepend(chip);
+  const integrityChecks = [integrityChip(f.src, f.sha256, "Preview PNG")];
+  if (f.publicationSrc && f.publicationSha256) {
+    integrityChecks.push(
+      integrityChip(f.publicationSrc, f.publicationSha256, "Publication PDF")
+    );
+  }
+  const checkedChips = await Promise.all(integrityChecks);
+  chips.prepend(...checkedChips);
   main.append(chips);
+
+  if (f.publicationSrc) {
+    const publication = document.createElement("a");
+    publication.className = "publication-link";
+    publication.href = f.publicationSrc;
+    publication.download = "";
+    publication.textContent = "Download vector PDF for LaTeX";
+    main.append(publication);
+  }
 
   const img = document.createElement("img");
   img.className = "figure";
@@ -748,7 +791,7 @@ function renderC() {
 
 function buildManifest() {
   return {
-    manifestVersion: "0.1-prototype",
+    manifestVersion: "0.2-prototype",
     figureSetVersion: state.data.figureSetVersion,
     profile: state.review.profile,
     exportedAt: new Date().toISOString(),
@@ -759,6 +802,13 @@ function buildManifest() {
       comments: state.review.figures[f.id].comments.map((c) => ({ ...c })),
       claimCardIds: f.claimCardIds,
       contentSha256: f.sha256,
+      publication: f.publicationSrc
+        ? {
+            format: f.publicationFormat,
+            path: f.publicationSrc,
+            sha256: f.publicationSha256,
+          }
+        : null,
     })),
     claims: state.data.claims.map((c) => ({
       id: c.id,

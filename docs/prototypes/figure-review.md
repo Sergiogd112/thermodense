@@ -31,7 +31,12 @@ PYTHONPATH=src python -m thermodense.prototypes.figure_review
 
 - Browse / compare / inspect: figure set derived from the committed real ParCorr
   results (`benchmarks/pcmci-methods/results/real-1/local/`), provenance shown
-  per figure (source artifacts + sha256), in-browser SHA-256 verification.
+  per figure (source artifacts + sha256), in-browser SHA-256 verification of
+  both the PNG preview and vector PDF publication artifact.
+- Publication output: paired PNG browser previews and LaTeX-friendly vector PDF
+  figures with embedded TrueType fonts; PDFs are downloadable from figure detail.
+- Appearance: follows the operating-system preference by default, with explicit
+  Light and Dark overrides shared by all three variants.
 - Decide: `include` / `supplement` / `revise` / `exclude` per figure.
 - Comment: figure-level and panel-level, typed `scientific` / `limitation` /
   `caption` / `presentation`.

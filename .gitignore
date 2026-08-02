@@ -20,6 +20,7 @@ __pycache__/
 *.log
 *.pid
 *.pdf
+!src/thermodense/prototypes/figure_review/figures/*.pdf
 *.aux
 *.bbl
 *.bcf
