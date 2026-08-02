@@ -26,4 +26,20 @@ Every row carries the `git_commit` (HEAD of the enclosing checkout) and `spec_di
 
 This benchmark is a computational comparison, not evidence about the real-data scientific result or conditional-independence validity.
 
-The separately reviewed second-stage real benchmark is the primary-profile daily mean `log10` HASDM density at 325 and 500 km with CO2, F10.7, and Ap. It is deliberately outside this frozen synthetic harness.
+The separately reviewed second-stage real analysis is the primary-profile daily
+mean `log10` HASDM density at 325 and 825 km with NOAA GML Mauna Loa daily CO2
+(including its documented Maunakea substitution), F10.7, and Ap. It is
+deliberately outside this frozen synthetic harness and uses PCMCI+ rather than
+PCMCI:
+
+```sh
+uv run python -m thermodense.benchmarks.real_data
+uv run python -m thermodense.benchmarks.pcmci_real run \
+  --output results-real.jsonl --methods parcorr cmiknn \
+  --tau-max 180 --cmiknn-workers 24
+```
+
+The real runner preserves the consecutive daily calendar, retains unavailable
+CO2 days as missing observations, and writes both provenance JSONL and canonical
+compressed NPZ matrices. GPDC is deferred for this stage because the synthetic
+CPU results project a multi-week representative run.
