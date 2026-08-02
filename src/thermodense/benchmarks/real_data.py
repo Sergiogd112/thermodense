@@ -84,20 +84,18 @@ def nearest_hasdm_latitude(decoded_dir: Path = DECODED_HASDM_DIR) -> float:
 
 
 def daily_hasdm_for_path(path: Path, grid_lat: float) -> pl.DataFrame:
-    """Per (date, altitude_km) daily mean of rho with log10 columns.
+    """Per (date, altitude_km) daily mean log10 density.
 
     Mirrors the thesis pipeline's HASDM Mauna Loa subset: filter to the
-    nearest latitude and valid densities, pick the nearest longitude per
-    timestamp and altitude, then aggregate daily.
+    nearest latitude, pick the nearest longitude per timestamp and altitude,
+    validate that selected grid value, then aggregate daily mean log-density.
     """
-    lf = pl.scan_parquet(str(path)).filter(
+    geographic = pl.scan_parquet(str(path)).filter(
         (pl.col(HASDM_LAT_COL) == grid_lat)
-        & (pl.col(HASDM_DENSITY_COL) > 0)
-        & (pl.col(HASDM_DENSITY_COL) <= MAX_VALID_HASDM_DENSITY)
         & (pl.col(HASDM_ALT_COL) / 1000.0).is_in(ALTITUDES_KM)
     )
     selected = (
-        lf.with_columns(
+        geographic.with_columns(
             circular_lon_delta_expr(HASDM_LON_COL, MAUNA_LOA_LON_EAST).alias(
                 "lon_delta"
             )
@@ -108,6 +106,10 @@ def daily_hasdm_for_path(path: Path, grid_lat: float) -> pl.DataFrame:
             .alias("nearest_lon_delta")
         )
         .filter(pl.col("lon_delta") == pl.col("nearest_lon_delta"))
+        .filter(
+            (pl.col(HASDM_DENSITY_COL) > 0)
+            & (pl.col(HASDM_DENSITY_COL) <= MAX_VALID_HASDM_DENSITY)
+        )
         .group_by(["timestamp", HASDM_ALT_COL])
         .agg(pl.col(HASDM_DENSITY_COL).first().alias("rho_grid"))
         .select(
@@ -120,10 +122,9 @@ def daily_hasdm_for_path(path: Path, grid_lat: float) -> pl.DataFrame:
         selected.with_columns(pl.col("timestamp").dt.date().alias("date"))
         .group_by(["date", "altitude_km"])
         .agg(
-            pl.col("rho_grid").mean().alias("rho_daily_mean"),
+            pl.col("rho_grid").log10().mean().alias("log10rho_daily_mean"),
             pl.len().alias("n_samples"),
         )
-        .with_columns(pl.col("rho_daily_mean").log10().alias("log10rho_daily_mean"))
     )
     return daily.collect()
 

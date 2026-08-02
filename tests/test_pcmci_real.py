@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+import hashlib
+import json
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +33,21 @@ def test_preprocess_preserves_nan_and_standardizes_finite_values() -> None:
     assert np.allclose(np.nanmean(result, axis=0), 0.0)
     assert np.nanstd(result[:, 0]) == 0.0
     assert np.isclose(np.nanstd(result[:, 1]), 1.0)
+
+
+def test_seasonal_anomaly_matches_calendar_month_day_and_keeps_february_29_distinct() -> (
+    None
+):
+    dates = np.array(
+        ["2020-02-28", "2021-02-28", "2020-02-29", "2020-03-01", "2021-03-01"],
+        dtype="datetime64[D]",
+    )
+
+    anomalies = pcmci_real.seasonal_anomaly(
+        np.array([10.0, 14.0, 100.0, 20.0, 24.0]), dates
+    )
+
+    assert np.allclose(anomalies, [-2.0, 2.0, 0.0, -2.0, 2.0])
 
 
 def test_validate_daily_dates_rejects_duplicates_and_gaps() -> None:
@@ -102,19 +119,83 @@ def test_cli_rejects_invalid_real_run_options(tmp_path: Path, capsys) -> None:
         pcmci_real.main(["run", "--output", str(output), "--methods", "gpdc"])
 
 
-def test_tiny_real_parcorr_pcmciplus_case() -> None:
+def test_tiny_real_parcorr_pcmciplus_case(tmp_path: Path) -> None:
     rng = np.random.default_rng(4)
     dates = np.arange("2020-01-01", "2020-03-21", dtype="datetime64[D]")
     values = rng.normal(size=(len(dates), len(NODE_COLUMNS)))
     input_data = pcmci_real.RealInput(dates, values, {})
 
+    artifact = tmp_path / "pcmci-real-test-result.npz"
     result = pcmci_real.run_pcmciplus(
-        input_data, "parcorr", tau_max=1, cmiknn_workers=1
+        input_data, "parcorr", tau_max=1, cmiknn_workers=1, artifact_path=artifact
     )
 
     assert result["matrix_shapes"]["graph"] == [len(NODE_COLUMNS), len(NODE_COLUMNS), 2]
     assert len(result["result_digest"]) == 64
     assert "alpha_level" not in result["settings"]
+    with np.load(artifact, allow_pickle=False) as saved:
+        assert sorted(saved.files) == ["graph", "p_matrix", "val_matrix"]
+        assert saved["graph"].shape == tuple(result["matrix_shapes"]["graph"])
+        assert saved["p_matrix"].shape == tuple(result["matrix_shapes"]["p_matrix"])
+        assert saved["val_matrix"].shape == tuple(result["matrix_shapes"]["val_matrix"])
+
+
+def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -> None:
+    input_path = tmp_path / "five_node.csv"
+    _frame().write_csv(input_path)
+    output = tmp_path / "result.jsonl"
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--methods",
+            "parcorr",
+        ]
+    )
+    matrices = {
+        "graph": np.array([[["-->"]]]),
+        "p_matrix": np.array([[[0.25]]]),
+        "val_matrix": np.array([[[0.5]]]),
+    }
+
+    def fake_case(args, method, threads, artifact):
+        return {
+            "status": "succeeded",
+            "matrix_shapes": {
+                name: list(value.shape) for name, value in matrices.items()
+            },
+            "result_digest": pcmci_real.runtime.compact_result_digest(matrices),
+            "artifact": pcmci_real._write_result_artifact(artifact, matrices),
+        }
+
+    monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
+
+    assert pcmci_real.run(args) == 0
+    row = json.loads(output.read_text())
+    assert "calendar month/day" in row["preprocessing"]["seasonal_climatology"]
+    assert row["preprocessing"]["february_29_has_distinct_climatology"] is True
+    assert row["artifact"]["format"] == "npz-compressed"
+    assert row["artifact"]["keys"] == ["graph", "p_matrix", "val_matrix"]
+    artifact = Path(row["artifact"]["path"])
+    assert row["artifact"]["name"] == artifact.name
+    assert (
+        row["artifact"]["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
+    )
+    with np.load(artifact, allow_pickle=False) as saved:
+        for name, expected in matrices.items():
+            assert np.array_equal(saved[name], expected)
+
+
+def test_run_refuses_to_overwrite_existing_artifacts(tmp_path: Path) -> None:
+    output = tmp_path / "result.jsonl"
+    (tmp_path / "result_artifacts").mkdir()
+    args = pcmci_real.parser().parse_args(["run", "--output", str(output)])
+
+    with pytest.raises(ValueError, match="artifacts"):
+        pcmci_real.run(args)
 
 
 def test_pcmciplus_rejects_too_few_rows_for_lag_window() -> None:

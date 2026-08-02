@@ -103,6 +103,56 @@ def test_describe_counts_nulls_and_nans_as_missing() -> None:
     assert "ap_avg: 1/2 present; 0 imputed" in description
 
 
+def test_daily_density_target_is_mean_of_intraday_log10_values(tmp_path: Path) -> None:
+    path = tmp_path / "HASDM_intraday_merged.parquet"
+    pl.DataFrame(
+        [
+            {
+                "timestamp": datetime(2020, 1, 1, hour),
+                real_data.HASDM_LAT_COL: 20.0,
+                real_data.HASDM_LON_COL: real_data.MAUNA_LOA_LON_EAST,
+                real_data.HASDM_ALT_COL: 325_000.0,
+                real_data.HASDM_DENSITY_COL: density,
+            }
+            for hour, density in [(0, 1.0e-12), (12, 1.0e-10)]
+        ]
+    ).write_parquet(path)
+
+    result = real_data.daily_hasdm_for_path(path, 20.0)
+
+    target = result["log10rho_daily_mean"].item()
+    assert target == np.mean(np.log10([1.0e-12, 1.0e-10]))
+    assert target != np.log10(np.mean([1.0e-12, 1.0e-10]))
+
+
+def test_invalid_nearest_longitude_does_not_substitute_farther_valid_grid(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "HASDM_invalid_nearest_merged.parquet"
+    pl.DataFrame(
+        [
+            {
+                "timestamp": datetime(2020, 1, 1),
+                real_data.HASDM_LAT_COL: 20.0,
+                real_data.HASDM_LON_COL: real_data.MAUNA_LOA_LON_EAST,
+                real_data.HASDM_ALT_COL: 325_000.0,
+                real_data.HASDM_DENSITY_COL: 0.0,
+            },
+            {
+                "timestamp": datetime(2020, 1, 1),
+                real_data.HASDM_LAT_COL: 20.0,
+                real_data.HASDM_LON_COL: real_data.MAUNA_LOA_LON_EAST + 1.0,
+                real_data.HASDM_ALT_COL: 325_000.0,
+                real_data.HASDM_DENSITY_COL: 1.0e-12,
+            },
+        ]
+    ).write_parquet(path)
+
+    result = real_data.daily_hasdm_for_path(path, 20.0)
+
+    assert result.is_empty()
+
+
 def _write_hasdm(path: Path) -> None:
     rows = []
     for day, density_325, density_825 in [

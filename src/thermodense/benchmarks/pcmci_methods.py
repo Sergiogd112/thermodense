@@ -11,20 +11,17 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 import functools
 import hashlib
-import importlib.metadata
 import json
-import os
 from pathlib import Path
-import platform
 import random
 import resource
-import signal
-import subprocess
 import sys
 import time
 from typing import Any
 
 import numpy as np
+
+from thermodense.benchmarks import runtime
 
 SPEC_RELATIVE_PATH = Path("benchmarks") / "pcmci-methods" / "spec.toml"
 
@@ -126,58 +123,16 @@ def generate_synthetic_data(samples: int, *, level_index: int) -> np.ndarray:
 
 
 def method_settings(method: str, cmiknn_workers: int | None = None) -> dict[str, Any]:
-    settings: dict[str, Any] = {"pc_alpha": 0.05, "alpha_level": 0.05}
-    if method == "parcorr":
-        return settings | {"significance": "analytic"}
-    if method == "cmiknn":
-        result = settings | {
-            "significance": "shuffle_test",
-            "sig_samples": 20,
-            "sig_blocklength": 4,
-            "knn": 0.1,
-            "shuffle_neighbors": 5,
-            "workers": 1,
-        }
-        if cmiknn_workers is not None:
-            result = result | {"workers": cmiknn_workers}
-        return result
-    if method == "gpdc":
-        return settings | {"significance": "analytic"}
-    raise ValueError(f"Unknown benchmark method: {method}")
-
-
-def _array_digest(value: Any) -> str:
-    array = np.ascontiguousarray(np.asarray(value))
-    return hashlib.sha256(array.tobytes()).hexdigest()
+    return runtime.method_settings(method, cmiknn_workers)
 
 
 def compact_result_digest(results: dict[str, Any]) -> str:
     """Hash output matrices without writing their potentially large contents."""
-    digest_input = {
-        name: {"shape": list(np.asarray(value).shape), "sha256": _array_digest(value)}
-        for name, value in sorted(results.items())
-    }
-    encoded = json.dumps(digest_input, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(encoded).hexdigest()
+    return runtime.compact_result_digest(results)
 
 
 def _package_versions() -> dict[str, str]:
-    versions = {"python": platform.python_version(), "platform": platform.platform()}
-    for package in (
-        "numpy",
-        "scipy",
-        "tigramite",
-        "scikit-learn",
-        "numba",
-        "dcor",
-        "torch",
-        "gpytorch",
-    ):
-        try:
-            versions[package] = importlib.metadata.version(package)
-        except importlib.metadata.PackageNotFoundError:
-            versions[package] = "unavailable"
-    return versions
+    return runtime.package_versions()
 
 
 def _repo_root() -> Path | None:
@@ -203,21 +158,7 @@ def spec_digest() -> str | None:
 @functools.lru_cache(maxsize=1)
 def git_commit() -> str | None:
     """HEAD commit of the enclosing checkout, or None when unavailable."""
-    root = _repo_root()
-    if root is None:
-        return None
-    try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+    return runtime.git_commit()
 
 
 def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str, Any]:
@@ -228,14 +169,17 @@ def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str
     from tigramite.independence_tests.parcorr import ParCorr
     from tigramite.pcmci import PCMCI
 
-    level_index = next(index for index, level in enumerate(LEVELS) if level[0] == case.level)
+    level_index = next(
+        index for index, level in enumerate(LEVELS) if level[0] == case.level
+    )
     data = generate_synthetic_data(case.samples, level_index=level_index)
     settings = method_settings(case.method, cmiknn_workers)
     # CMIknn's shuffle test draws from the process-global RNGs; reseed them per
     # case so every run of a given (method, level) is bit-reproducible.
     derived = int(
-        np.random.SeedSequence([SEED, level_index, METHODS.index(case.method)])
-        .generate_state(1)[0]
+        np.random.SeedSequence(
+            [SEED, level_index, METHODS.index(case.method)]
+        ).generate_state(1)[0]
     )
     random.seed(derived)
     np.random.seed(derived)
@@ -253,9 +197,7 @@ def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str
     else:
         test = GPDC(significance="analytic")
     pcmci = PCMCI(dataframe=pp.DataFrame(data), cond_ind_test=test, verbosity=0)
-    result = pcmci.run_pcmci(
-        tau_max=case.tau_max, pc_alpha=0.05, alpha_level=0.05
-    )
+    result = pcmci.run_pcmci(tau_max=case.tau_max, pc_alpha=0.05, alpha_level=0.05)
     matrices = {
         name: value
         for name, value in result.items()
@@ -263,7 +205,9 @@ def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str
     }
     return {
         "settings": settings,
-        "matrix_shapes": {name: list(np.asarray(value).shape) for name, value in matrices.items()},
+        "matrix_shapes": {
+            name: list(np.asarray(value).shape) for name, value in matrices.items()
+        },
         "result_digest": compact_result_digest(matrices),
         "process_max_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         * 1024,
@@ -278,29 +222,16 @@ def _child_main(args: argparse.Namespace) -> int:
         payload["status"] = "succeeded"
         payload["wall_seconds"] = time.monotonic() - started
     except Exception as error:  # Child exceptions must become durable parent rows.
-        payload = {"status": "failed", "failure_reason": f"{type(error).__name__}: {error}"}
+        payload = {
+            "status": "failed",
+            "failure_reason": f"{type(error).__name__}: {error}",
+        }
     print(json.dumps(payload, sort_keys=True), flush=True)
     return 0
 
 
 def _thread_environment(threads: int) -> dict[str, str]:
     return {name: str(threads) for name in THREAD_ENVIRONMENT}
-
-
-def _terminate_process_tree(process: subprocess.Popen) -> None:
-    """Signal the whole child process group, escalating to SIGKILL."""
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait()
 
 
 def _run_isolated_case(
@@ -326,58 +257,7 @@ def _run_isolated_case(
     ]
     if cmiknn_workers is not None:
         child_command += ["--cmiknn-workers", str(cmiknn_workers)]
-    environment = os.environ.copy()
-    environment.update(_thread_environment(threads))
-    started = time.monotonic()
-    try:
-        # A new session gives the child its own process group so a timeout can
-        # terminate any BLAS/numba workers it spawned, not just the python it.
-        process = subprocess.Popen(
-            child_command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=environment,
-            start_new_session=True,
-        )
-    except OSError as error:
-        return {
-            "status": "failed",
-            "failure_reason": f"could not start child: {error}",
-            "wall_seconds": time.monotonic() - started,
-        }
-    try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        _terminate_process_tree(process)
-        process.communicate()
-        return {
-            "status": "timeout",
-            "failure_reason": f"exceeded timeout of {timeout:g} seconds",
-            "wall_seconds": time.monotonic() - started,
-        }
-    wall_seconds = time.monotonic() - started
-    if process.returncode < 0:
-        return {
-            "status": "killed",
-            "failure_reason": f"child terminated by signal {-process.returncode}",
-            "wall_seconds": wall_seconds,
-        }
-    try:
-        payload = json.loads(stdout.strip().splitlines()[-1])
-    except (IndexError, json.JSONDecodeError):
-        return {
-            "status": "failed",
-            "failure_reason": (
-                f"child produced no valid result (exit {process.returncode}): "
-                f"{stderr.strip()[-300:]}"
-            ),
-            "wall_seconds": wall_seconds,
-        }
-    if process.returncode != 0 and payload.get("status") == "succeeded":
-        payload = {"status": "failed", "failure_reason": f"child exited {process.returncode}"}
-    payload["wall_seconds"] = wall_seconds
-    return payload
+    return runtime.run_isolated_process(child_command, timeout, threads)
 
 
 def _base_row(case: Case, args: argparse.Namespace, threads: int) -> dict[str, Any]:
@@ -398,7 +278,8 @@ def _base_row(case: Case, args: argparse.Namespace, threads: int) -> dict[str, A
         "nodes": NODES,
         "tau_max": case.tau_max,
         "seed": SEED,
-        "settings": method_settings(case.method, args.cmiknn_workers) | {"threads": threads},
+        "settings": method_settings(case.method, args.cmiknn_workers)
+        | {"threads": threads},
         "package_versions": _package_versions(),
         "status": "pending",
         "skip_reason": None,
@@ -411,19 +292,15 @@ def _base_row(case: Case, args: argparse.Namespace, threads: int) -> dict[str, A
 
 
 def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
-    encoded = (json.dumps(row, sort_keys=True, separators=(",", ":")) + "\n").encode()
-    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
-    try:
-        os.write(descriptor, encoded)
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
+    runtime.append_jsonl(path, row)
 
 
 def run_benchmark(args: argparse.Namespace) -> int:
     output = args.output
     if output.exists() and not args.overwrite:
-        raise ValueError(f"Refusing to overwrite existing result: {output}; use --overwrite.")
+        raise ValueError(
+            f"Refusing to overwrite existing result: {output}; use --overwrite."
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     if args.overwrite:
         output.write_text("")
@@ -437,10 +314,16 @@ def run_benchmark(args: argparse.Namespace) -> int:
     for case in benchmark_plan(methods, levels):
         row = _base_row(case, args, threads)
         if case.method in blocked:
-            row.update(status="skipped", skip_reason=blocked[case.method], wall_seconds=0.0)
+            row.update(
+                status="skipped", skip_reason=blocked[case.method], wall_seconds=0.0
+            )
         else:
             print(f"running {case.method}/{case.level}", file=sys.stderr, flush=True)
-            row.update(_run_isolated_case(case, args.timeout, threads, cmiknn_workers=args.cmiknn_workers))
+            row.update(
+                _run_isolated_case(
+                    case, args.timeout, threads, cmiknn_workers=args.cmiknn_workers
+                )
+            )
             if row["status"] != "succeeded":
                 blocked[case.method] = (
                     f"previous {case.level} case {row['status']}: "
@@ -453,11 +336,15 @@ def run_benchmark(args: argparse.Namespace) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    result = argparse.ArgumentParser(prog="python -m thermodense.benchmarks.pcmci_methods")
+    result = argparse.ArgumentParser(
+        prog="python -m thermodense.benchmarks.pcmci_methods"
+    )
     commands = result.add_subparsers(dest="command", required=True)
     plan = commands.add_parser("plan", help="show the frozen synthetic benchmark plan")
     plan.add_argument("--format", choices=("human", "json"), default="human")
-    run = commands.add_parser("run", help="run benchmark cases in isolated child processes")
+    run = commands.add_parser(
+        "run", help="run benchmark cases in isolated child processes"
+    )
     run.add_argument("--output", type=Path, required=True)
     run.add_argument("--host-label", default="unspecified")
     run.add_argument("--environment-label", default="unspecified")
@@ -475,7 +362,9 @@ def parser() -> argparse.ArgumentParser:
     )
     case = commands.add_parser("case", help=argparse.SUPPRESS)
     case.add_argument("--method", choices=METHODS, required=True)
-    case.add_argument("--level", choices=tuple(level[0] for level in LEVELS), required=True)
+    case.add_argument(
+        "--level", choices=tuple(level[0] for level in LEVELS), required=True
+    )
     case.add_argument("--samples", type=int, required=True)
     case.add_argument("--tau-max", type=int, required=True)
     case.add_argument("--cmiknn-workers", type=int, default=None)
@@ -491,7 +380,9 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"{document['benchmark_version']}: {len(document['cases'])} cases")
             for case in document["cases"]:
-                print(f"  {case['method']} {case['level']}: n={case['samples']}, tau_max={case['tau_max']}")
+                print(
+                    f"  {case['method']} {case['level']}: n={case['samples']}, tau_max={case['tau_max']}"
+                )
             print("  GPDCtorch: deferred (Auriga driver/Torch CUDA 13 incompatibility)")
         return 0
     if args.command == "case":

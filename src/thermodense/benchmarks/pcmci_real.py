@@ -11,17 +11,20 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 import json
+import os
 from pathlib import Path
 import random
 import resource
+import shutil
 import sys
+import tempfile
 import time
 from typing import Any
 
 import numpy as np
 import polars as pl
 
-from thermodense.benchmarks import pcmci_methods
+from thermodense.benchmarks import runtime
 from thermodense.benchmarks.real_data import (
     DATE_COLUMN,
     DEFAULT_OUTPUT as DEFAULT_INPUT,
@@ -29,8 +32,8 @@ from thermodense.benchmarks.real_data import (
     NODE_COLUMNS,
 )
 
-SCHEMA_VERSION = "1"
-RUNNER_VERSION = "pcmci-real-1"
+SCHEMA_VERSION = "2"
+RUNNER_VERSION = "pcmci-real-2"
 METHODS = ("parcorr", "cmiknn")
 DEFERRED_METHODS = {"gpdc": "explicitly deferred for real-data PCMCI+ runs"}
 DEFAULT_TAU_MAX = 180
@@ -47,9 +50,10 @@ class RealInput:
     metadata: dict[str, Any]
 
 
-def _day_of_year(dates: np.ndarray) -> np.ndarray:
+def calendar_month_days(dates: np.ndarray) -> list[tuple[int, int]]:
+    """Return calendar month/day keys, retaining February 29 as its own day."""
     python_dates = dates.astype("datetime64[D]").astype(object)
-    return np.array([date.timetuple().tm_yday for date in python_dates], dtype=int)
+    return [(date.month, date.day) for date in python_dates]
 
 
 def rolling_nanmean(values: np.ndarray, window: int) -> np.ndarray:
@@ -79,25 +83,33 @@ def finite_standardize(values: np.ndarray) -> np.ndarray:
     return result
 
 
+def seasonal_anomaly(values: np.ndarray, dates: np.ndarray) -> np.ndarray:
+    """Remove per-calendar-month/day means, preserving missing values.
+
+    Calendar month/day matching aligns dates across leap and non-leap years;
+    February 29 is intentionally a distinct climatology bin.
+    """
+    values = np.asarray(values, dtype=float)
+    climatology: dict[tuple[int, int], float] = {}
+    keys = calendar_month_days(dates)
+    for key in set(keys):
+        selected = values[[index for index, value in enumerate(keys) if value == key]]
+        finite = selected[np.isfinite(selected)]
+        if finite.size:
+            climatology[key] = float(finite.mean())
+    finite_values = values[np.isfinite(values)]
+    fallback = float(finite_values.mean()) if finite_values.size else np.nan
+    return values - np.array([climatology.get(key, fallback) for key in keys])
+
+
 def preprocess(values: np.ndarray, dates: np.ndarray) -> np.ndarray:
     """Apply the registered primary daily detrended-anomaly transformation."""
     values = np.asarray(values, dtype=float)
     if values.ndim != 2:
         raise ValueError("values must be a two-dimensional node matrix")
-    doys = _day_of_year(dates)
     result = np.empty_like(values, dtype=float)
     for column in range(values.shape[1]):
-        node = values[:, column]
-        climatology = np.full(367, np.nan)
-        for doy in range(1, 367):
-            selected = node[doys == doy]
-            finite = selected[np.isfinite(selected)]
-            if finite.size:
-                climatology[doy] = finite.mean()
-        finite_node = node[np.isfinite(node)]
-        fallback = finite_node.mean() if finite_node.size else np.nan
-        climatology = np.where(np.isfinite(climatology), climatology, fallback)
-        anomaly = node - climatology[doys]
+        anomaly = seasonal_anomaly(values[:, column], dates)
         result[:, column] = finite_standardize(
             anomaly - rolling_nanmean(anomaly, ROLLING_WINDOW)
         )
@@ -223,15 +235,48 @@ def _method_seed(method: str) -> int:
 
 def real_method_settings(method: str, cmiknn_workers: int) -> dict[str, Any]:
     """Return only settings consumed by the real PCMCI+ execution."""
-    settings = pcmci_methods.method_settings(method, cmiknn_workers)
+    settings = runtime.method_settings(method, cmiknn_workers)
     # The synthetic run_pcmci entry point consumes alpha_level; run_pcmciplus
     # does not expose that argument and instead uses pc_alpha.
     settings.pop("alpha_level")
     return settings
 
 
+def _write_result_artifact(path: Path, matrices: dict[str, Any]) -> dict[str, Any]:
+    """Atomically persist the canonical PCMCI+ matrices in compressed NPZ."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent, suffix=".npz", delete=False
+    ) as handle:
+        temporary_path = Path(handle.name)
+        try:
+            np.savez_compressed(handle, **matrices)
+            handle.flush()
+            os.fsync(handle.fileno())
+        except BaseException:
+            temporary_path.unlink(missing_ok=True)
+            raise
+    os.replace(temporary_path, path)
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+    return {
+        "path": str(path),
+        "name": path.name,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "format": "npz-compressed",
+        "keys": sorted(matrices),
+    }
+
+
 def run_pcmciplus(
-    input_data: RealInput, method: str, tau_max: int, cmiknn_workers: int
+    input_data: RealInput,
+    method: str,
+    tau_max: int,
+    cmiknn_workers: int,
+    artifact_path: Path | None = None,
 ) -> dict[str, Any]:
     """Run one real PCMCI+ method. Tigramite imports remain in the child process."""
     from tigramite import data_processing as pp
@@ -277,21 +322,21 @@ def run_pcmciplus(
         conflict_resolution=True,
         fdr_method="none",
     )
-    matrices = {
-        name: results[name]
-        for name in ("val_matrix", "p_matrix", "graph")
-        if name in results
-    }
+    matrices = {name: results[name] for name in ("val_matrix", "p_matrix", "graph")}
     return {
         "settings": settings,
         "seed": seed,
         "matrix_shapes": {
             name: list(np.asarray(value).shape) for name, value in matrices.items()
         },
-        "result_digest": pcmci_methods.compact_result_digest(matrices),
+        "result_digest": runtime.compact_result_digest(matrices),
         "process_max_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         * 1024,
-    }
+    } | (
+        {"artifact": _write_result_artifact(artifact_path, matrices)}
+        if artifact_path
+        else {}
+    )
 
 
 def _child_main(args: argparse.Namespace) -> int:
@@ -302,6 +347,7 @@ def _child_main(args: argparse.Namespace) -> int:
             args.method,
             args.tau_max,
             args.cmiknn_workers,
+            args.artifact,
         )
         payload.update(status="succeeded", wall_seconds=time.monotonic() - started)
     except Exception as error:
@@ -314,7 +360,7 @@ def _child_main(args: argparse.Namespace) -> int:
 
 
 def _run_isolated_case(
-    args: argparse.Namespace, method: str, threads: int
+    args: argparse.Namespace, method: str, threads: int, artifact: Path
 ) -> dict[str, Any]:
     command = [
         sys.executable,
@@ -329,15 +375,12 @@ def _run_isolated_case(
         str(args.tau_max),
         "--cmiknn-workers",
         str(args.cmiknn_workers),
+        "--artifact",
+        str(artifact),
     ]
     if args.row_limit is not None:
         command.extend(["--row-limit", str(args.row_limit)])
-    return pcmci_methods._run_isolated_case(  # noqa: SLF001 - shared tested isolation primitive
-        pcmci_methods.Case(method, "real", 0, args.tau_max),
-        args.timeout,
-        threads,
-        command=command,
-    )
+    return runtime.run_isolated_process(command, args.timeout, threads)
 
 
 def _base_row(
@@ -359,7 +402,12 @@ def _base_row(
         "input": input_data.metadata,
         "preprocessing": {
             "profile": "primary_detrended_anomaly",
-            "day_of_year_anomaly": True,
+            "calendar_month_day_anomaly": True,
+            "february_29_has_distinct_climatology": True,
+            "seasonal_climatology": (
+                "finite daily values grouped by calendar month/day across years; "
+                "February 29 remains a distinct group"
+            ),
             "centered_rolling_nanmean_window": ROLLING_WINDOW,
             "finite_standardization": True,
             "missing_values_preserved": True,
@@ -382,32 +430,40 @@ def _base_row(
         },
         "settings": real_method_settings(method, args.cmiknn_workers)
         | {"threads": threads},
-        "package_versions": pcmci_methods._package_versions(),  # noqa: SLF001
-        "git_commit": pcmci_methods.git_commit(),
+        "package_versions": runtime.package_versions(),
+        "git_commit": runtime.git_commit(),
         "wall_seconds": None,
         "process_max_rss_bytes": None,
         "matrix_shapes": {},
         "result_digest": None,
+        "artifact": None,
         "failure_reason": None,
     }
 
 
 def run(args: argparse.Namespace) -> int:
-    if args.output.exists() and not args.overwrite:
+    artifact_directory = args.output.parent / f"{args.output.stem}_artifacts"
+    if (args.output.exists() or artifact_directory.exists()) and not args.overwrite:
         raise ValueError(
-            f"Refusing to overwrite existing result: {args.output}; use --overwrite."
+            f"Refusing to overwrite existing result or artifacts: {args.output}; use --overwrite."
         )
     input_data = load_input(args.input, args.row_limit)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.overwrite:
         args.output.write_text("")
+        shutil.rmtree(artifact_directory, ignore_errors=True)
+    artifact_directory.mkdir(parents=True, exist_ok=True)
     threads = args.threads if args.threads is not None else 1
     summary: dict[str, int] = {}
     for method in args.methods or METHODS:
         print(f"running {method}", file=sys.stderr, flush=True)
         row = _base_row(args, method, input_data, threads)
-        row.update(_run_isolated_case(args, method, threads))
-        pcmci_methods._append_jsonl(args.output, row)  # noqa: SLF001
+        row.update(
+            _run_isolated_case(
+                args, method, threads, artifact_directory / f"{method}.npz"
+            )
+        )
+        runtime.append_jsonl(args.output, row)
         summary[row["status"]] = summary.get(row["status"], 0) + 1
     print(f"{args.output} {json.dumps(summary, sort_keys=True)}")
     return 0
@@ -441,6 +497,7 @@ def parser() -> argparse.ArgumentParser:
     case.add_argument("--tau-max", type=int, required=True)
     case.add_argument("--row-limit", type=int)
     case.add_argument("--cmiknn-workers", type=int, default=DEFAULT_CMIKNN_WORKERS)
+    case.add_argument("--artifact", type=Path, required=True)
     return result
 
 
