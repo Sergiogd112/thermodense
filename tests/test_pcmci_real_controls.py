@@ -83,6 +83,11 @@ def test_controls_preserve_shift_values_missing_mask_and_valid_offsets() -> None
     assert metadata["control_iaaft_a"]["source_node"] == "a"
     assert metadata["control_iaaft_a"]["missingness_matched"] is True
 
+    iaaft_only, _ = controls.generate_controls(
+        values, ["a", "b"], tau_max=180, seed=7, families=("iaaft",)
+    )
+    assert list(iaaft_only) == ["control_iaaft_a", "control_iaaft_b"]
+
 
 def test_selected_links_include_family_and_source_metadata() -> None:
     names = ["physical", "control_iaaft_physical"]
@@ -166,7 +171,11 @@ def test_cli_validation_and_tiny_live_pcmci(tmp_path: Path, capsys) -> None:
     artifact = tmp_path / "result.npz"
     summary = tmp_path / "links.jsonl"
     result = controls.run_pcmciplus(
-        data, tau_max=1, seed=9, artifact_path=artifact, summary_path=summary
+        data,
+        tau_max=1,
+        seed=9,
+        artifact_path=artifact,
+        summary_path=summary,
     )
     assert result["matrix_shapes"]["graph"] == [15, 15, 2]
     with np.load(artifact, allow_pickle=False) as saved:

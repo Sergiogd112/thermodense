@@ -35,6 +35,7 @@ IAAFT_ITERATIONS = 100
 ANNUAL_DAYS = 365
 ANNUAL_EXCLUSION_DAYS = 7
 MISSING_FLAG = pcmci_real.MISSING_FLAG
+CONTROL_FAMILIES = ("iaaft", "circular_shift")
 
 
 def _sha256(values: np.ndarray) -> str:
@@ -111,7 +112,11 @@ def valid_shift_offsets(length: int, tau_max: int) -> np.ndarray:
 
 
 def generate_controls(
-    preprocessed: np.ndarray, node_names: list[str], tau_max: int, seed: int
+    preprocessed: np.ndarray,
+    node_names: list[str],
+    tau_max: int,
+    seed: int,
+    families: tuple[str, ...] = CONTROL_FAMILIES,
 ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
     """Generate one IAAFT and one circular-shift control for every physical node."""
     if preprocessed.ndim != 2 or preprocessed.shape[1] != len(node_names):
@@ -129,27 +134,29 @@ def generate_controls(
         shift_rng = np.random.default_rng(shift_seed)
         iaaft_name = f"control_iaaft_{source}"
         shift_name = f"control_circular_shift_{source}"
-        iaaft, iaaft_metadata = iaaft_surrogate(preprocessed[:, index], iaaft_seed)
-        offset = int(shift_rng.choice(offsets))
-        shifted = np.roll(preprocessed[:, index], offset)
-        controls[iaaft_name] = iaaft
-        controls[shift_name] = shifted
-        metadata[iaaft_name] = iaaft_metadata | {
-            "family": "iaaft",
-            "source_node": source,
-            "source_sha256": _sha256(preprocessed[:, index]),
-            "source_mask_matched": True,
-        }
-        metadata[shift_name] = {
-            "family": "circular_shift",
-            "source_node": source,
-            "seed": shift_seed,
-            "offset": offset,
-            "annual_modulo_days": int(offset % ANNUAL_DAYS),
-            "source_sha256": _sha256(preprocessed[:, index]),
-            "output_sha256": _sha256(shifted),
-            "missing_count": int((~np.isfinite(shifted)).sum()),
-        }
+        if "iaaft" in families:
+            iaaft, iaaft_metadata = iaaft_surrogate(preprocessed[:, index], iaaft_seed)
+            controls[iaaft_name] = iaaft
+            metadata[iaaft_name] = iaaft_metadata | {
+                "family": "iaaft",
+                "source_node": source,
+                "source_sha256": _sha256(preprocessed[:, index]),
+                "source_mask_matched": True,
+            }
+        if "circular_shift" in families:
+            offset = int(shift_rng.choice(offsets))
+            shifted = np.roll(preprocessed[:, index], offset)
+            controls[shift_name] = shifted
+            metadata[shift_name] = {
+                "family": "circular_shift",
+                "source_node": source,
+                "seed": shift_seed,
+                "offset": offset,
+                "annual_modulo_days": int(offset % ANNUAL_DAYS),
+                "source_sha256": _sha256(preprocessed[:, index]),
+                "output_sha256": _sha256(shifted),
+                "missing_count": int((~np.isfinite(shifted)).sum()),
+            }
     return controls, metadata
 
 
@@ -176,6 +183,7 @@ def run_pcmciplus(
     input_data: pcmci_real.RealInput,
     tau_max: int,
     seed: int,
+    families: tuple[str, ...] = CONTROL_FAMILIES,
     artifact_path: Path | None = None,
     summary_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -191,7 +199,7 @@ def run_pcmciplus(
     physical_names = list(input_data.metadata.get("node_order", NODE_COLUMNS))
     preprocessed = pcmci_real.preprocess(input_data.values, input_data.dates)
     controls, control_metadata = generate_controls(
-        preprocessed, physical_names, tau_max, seed
+        preprocessed, physical_names, tau_max, seed, families
     )
     node_names = [*physical_names, *controls]
     values = np.column_stack([preprocessed, *(controls[name] for name in controls)])
@@ -247,6 +255,7 @@ def _child_main(args: argparse.Namespace) -> int:
             pcmci_real.load_input(args.input, args.row_limit),
             args.tau_max,
             args.seed,
+            tuple(args.control_families),
             args.artifact,
             args.summary,
         )
@@ -274,6 +283,8 @@ def _run_isolated_case(
         str(args.tau_max),
         "--seed",
         str(args.seed),
+        "--control-families",
+        *args.control_families,
         "--artifact",
         str(artifact),
         "--summary",
@@ -302,6 +313,7 @@ def _base_row(
         "input": input_data.metadata,
         "controls": {
             "seed": args.seed,
+            "families": args.control_families,
             "one_iaaft_and_one_circular_shift_per_physical_node": True,
             "iaaft_iterations": IAAFT_ITERATIONS,
             "iaaft_fill_method": "deterministic linear interpolation with nearest finite edge fill",
@@ -385,6 +397,12 @@ def parser() -> argparse.ArgumentParser:
         "--row-limit", type=int, help="calibration-only prefix row limit"
     )
     run_parser.add_argument("--seed", type=int, default=SEED)
+    run_parser.add_argument(
+        "--control-families",
+        nargs="+",
+        choices=CONTROL_FAMILIES,
+        default=list(CONTROL_FAMILIES),
+    )
     run_parser.add_argument("--threads", type=int)
     run_parser.add_argument("--timeout", type=float, default=1800.0)
     run_parser.add_argument("--host-label", default="unspecified")
@@ -396,6 +414,9 @@ def parser() -> argparse.ArgumentParser:
     case.add_argument("--tau-max", type=int, required=True)
     case.add_argument("--row-limit", type=int)
     case.add_argument("--seed", type=int, required=True)
+    case.add_argument(
+        "--control-families", nargs="+", choices=CONTROL_FAMILIES, required=True
+    )
     case.add_argument("--artifact", type=Path, required=True)
     case.add_argument("--summary", type=Path, required=True)
     return result
