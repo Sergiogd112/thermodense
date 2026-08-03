@@ -4,7 +4,7 @@ One command to run (from the repo root):
 
     PYTHONPATH=src python -m thermodense.prototypes.figure_review
 
-Opens http://127.0.0.1:8124/?variant=A in the default browser.
+Opens http://127.0.0.1:8124/?variant=B in the default browser.
 Regenerate the sample figures first if figures/ is empty:
 
     PYTHONPATH=src python -m thermodense.prototypes.figure_review.make_figures
@@ -36,7 +36,7 @@ def main() -> None:
         PrototypeHandler, directory=HERE
     )
     httpd = http.server.ThreadingHTTPServer((HOST, PORT), handler)
-    url = f"http://{HOST}:{PORT}/?variant=A"
+    url = f"http://{HOST}:{PORT}/?variant=B"
     threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     print(f"PROTOTYPE figure-review workbench -> {url}  (Ctrl+C to stop)")
     try:

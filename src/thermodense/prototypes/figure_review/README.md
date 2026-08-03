@@ -17,7 +17,7 @@ interface question. Captured on branch `prototype/issue-15-figure-review`.
 PYTHONPATH=src python -m thermodense.prototypes.figure_review
 ```
 
-Opens `http://127.0.0.1:8124/?variant=A`. Regenerate the sample figures from
+Opens `http://127.0.0.1:8124/?variant=B`. Regenerate the sample figures from
 the committed real results (optional):
 
 ```sh
@@ -27,6 +27,9 @@ PYTHONPATH=src python -m thermodense.prototypes.figure_review.make_figures
 ## The three variants
 
 Switch with the floating bottom bar or `?variant=A|B|C`:
+
+**Current choice: B — Board.** It is now the default while A and C remain in the
+throwaway prototype for comparison.
 
 - **A — Ledger (keyboard triage):** dense figure list + master detail. Keys
   `j`/`k` navigate, `i`/`s`/`r`/`e` decide, `x` clears, `n` jumps to the next

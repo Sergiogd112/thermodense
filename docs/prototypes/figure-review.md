@@ -3,6 +3,9 @@
 Status: **prototype for decision**, captured on branch
 `prototype/issue-15-figure-review`.
 
+Current layout decision: **B — Board**, selected as the working direction while
+the prototype remains open to refinement.
+
 ## Question
 
 See

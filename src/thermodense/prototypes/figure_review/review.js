@@ -42,7 +42,7 @@ const state = {
 
 function initVariant() {
   const v = new URLSearchParams(location.search).get("variant");
-  return VARIANTS.some((x) => x.key === v) ? v : "A";
+  return VARIANTS.some((x) => x.key === v) ? v : "B";
 }
 
 function loadCalibration() {
