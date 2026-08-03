@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Figure review — PROTOTYPE (issue #15)</title>
+  <script>
+    if (!location.pathname.endsWith("/")) {
+      const canonical = new URL(location.href);
+      canonical.pathname += "/";
+      location.replace(canonical);
+    }
+  </script>
   <link rel="stylesheet" href="review.css">
 </head>
 <body>

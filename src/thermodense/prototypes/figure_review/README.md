@@ -24,6 +24,37 @@ the committed real results (optional):
 PYTHONPATH=src python -m thermodense.prototypes.figure_review.make_figures
 ```
 
+## Tailnet access
+
+This workstation serves the prototype tailnet-only at:
+
+`https://omarchy.taileb3aa0.ts.net/figure-review/`
+
+The node's root URL remains reserved for t3code. Tailscale Serve provides one
+MagicDNS hostname for the node, so a scoped `/figure-review/` route avoids
+overwriting `/` without requiring unsupported ad-hoc subdomains. This is not a
+public Funnel; normal tailnet identity and ACLs apply.
+
+The localhost process runs through the tracked user-systemd unit:
+
+```sh
+systemctl --user link "$PWD/scripts/systemd/thermodense-figure-review.service"
+systemctl --user enable --now thermodense-figure-review.service
+tailscale serve --bg --yes --set-path /figure-review http://127.0.0.1:8124
+```
+
+The server remains bound to `127.0.0.1`; Tailscale terminates HTTPS and proxies
+the scoped route. `THERMODENSE_FIGURE_REVIEW_NO_OPEN=1` prevents background
+service restarts from opening a browser.
+
+## Mobile board
+
+At phone widths, variant B presents one decision column at a time. Swipe left or
+right between columns and use each card's **Move to…** selector instead of drag
+and drop. Cards use touch-sized controls, comparison/detail opens full-screen,
+and the calibrated A4 preview remains physically sized and scrollable rather
+than shrinking to the phone.
+
 ## The three variants
 
 Switch with the floating bottom bar or `?variant=A|B|C`:
@@ -96,4 +127,5 @@ infrastructure. Integrity/accessibility/limits checks warn; they do not decide.
   and `figures/*.pdf` LaTeX publication artifacts.
 - `index.html`, `review.css`, `review.js` — the three variants + switcher.
 - `data.json`, `figures/` — sample review data (real-data-derived).
-- `__main__.py` — localhost server (one command to run).
+- `__main__.py` — no-cache localhost server (one command to run).
+- `scripts/systemd/thermodense-figure-review.service` — persistent user service.

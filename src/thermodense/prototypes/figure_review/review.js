@@ -15,7 +15,7 @@
 
 const VARIANTS = [
   { key: "A", name: "Ledger — keyboard triage" },
-  { key: "B", name: "Board — drag & drop by decision" },
+  { key: "B", name: "Board — decisions by column" },
   { key: "C", name: "Claim-first — manifest audit" },
 ];
 
@@ -33,6 +33,7 @@ const state = {
   printWidths: {},
   calibration: loadCalibration(),
   calibrationOpen: false,
+  boardFocusColumn: 0,
   selectedFigure: null,
   selectedClaim: null,
   compareSel: [],
@@ -416,6 +417,9 @@ function header() {
   const spacer = document.createElement("div");
   spacer.className = "spacer";
   bar.append(spacer);
+  const headerControls = document.createElement("div");
+  headerControls.className = "topbar-controls";
+  bar.append(headerControls);
 
   const profile = document.createElement("select");
   profile.title = "Journal profile (advisory limits)";
@@ -427,7 +431,7 @@ function header() {
   }
   profile.value = state.review.profile;
   profile.onchange = () => setProfile(profile.value);
-  bar.append(profile);
+  headerControls.append(profile);
 
   const appearance = document.createElement("select");
   appearance.className = "appearance-select";
@@ -445,7 +449,7 @@ function header() {
   }
   appearance.value = state.appearance;
   appearance.onchange = () => setAppearance(appearance.value);
-  bar.append(appearance);
+  headerControls.append(appearance);
 
   const view = document.createElement("select");
   view.className = "view-select";
@@ -462,13 +466,13 @@ function header() {
   }
   view.value = state.viewMode;
   view.onchange = () => setViewMode(view.value);
-  bar.append(view);
+  headerControls.append(view);
 
   const exp = document.createElement("button");
   exp.className = "primary";
   exp.textContent = "Export manifest";
   exp.onclick = exportManifest;
-  bar.append(exp);
+  headerControls.append(exp);
 
   const imp = document.createElement("button");
   imp.textContent = "Import";
@@ -480,7 +484,7 @@ function header() {
     if (file.files[0]) importManifest(file.files[0]);
   };
   imp.onclick = () => file.click();
-  bar.append(imp, file);
+  headerControls.append(imp, file);
 
   const banner = document.createElement("div");
   banner.className = "profile-banner";
@@ -870,12 +874,15 @@ function boardColumn(col, figs) {
     e.preventDefault();
     section.classList.remove("drag-over");
     const id = e.dataTransfer.getData("text/plain");
-    if (id) setDecision(id, col === "Unreviewed" ? null : col.toLowerCase());
+    if (id) {
+      state.boardFocusColumn = ["Unreviewed", "Include", "Supplement", "Revise", "Exclude"].indexOf(col);
+      setDecision(id, col === "Unreviewed" ? null : col.toLowerCase());
+    }
   };
   for (const f of figs) {
     const card = document.createElement("div");
     card.className = "b-card";
-    card.draggable = true;
+    card.draggable = window.matchMedia("(pointer: fine)").matches && window.innerWidth > 640;
     card.ondragstart = (e) => {
       e.dataTransfer.setData("text/plain", f.id);
       e.dataTransfer.effectAllowed = "move";
@@ -903,6 +910,28 @@ function boardColumn(col, figs) {
       render();
     };
     cmp.append(cb, " compare");
+    const move = document.createElement("select");
+    move.className = "card-decision";
+    move.setAttribute("aria-label", `Move ${f.title} to decision column`);
+    for (const [value, label] of [
+      ["", "Unreviewed"],
+      ["include", "Include"],
+      ["supplement", "Supplement"],
+      ["revise", "Revise"],
+      ["exclude", "Exclude"],
+    ]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      move.append(option);
+    }
+    move.value = state.review.figures[f.id].decision ?? "";
+    move.onclick = (e) => e.stopPropagation();
+    move.onchange = (e) => {
+      e.stopPropagation();
+      state.boardFocusColumn = ["", "include", "supplement", "revise", "exclude"].indexOf(move.value);
+      setDecision(f.id, move.value || null);
+    };
     const open = document.createElement("button");
     open.textContent = "open";
     open.onclick = (e) => {
@@ -910,7 +939,7 @@ function boardColumn(col, figs) {
       state.modalFigure = f.id;
       render();
     };
-    row2.append(cmp, open);
+    row2.append(cmp, move, open);
     card.append(img, t, row2);
     card.onclick = () => {
       state.modalFigure = f.id;
@@ -926,6 +955,9 @@ function renderB() {
   app.replaceChildren(header());
   const board = document.createElement("div");
   board.className = "b-board";
+  const mobileHint = document.createElement("div");
+  mobileHint.className = "b-mobile-hint";
+  mobileHint.textContent = "Swipe between decision columns · use Move to… on a card";
   const cols = ["Unreviewed", "Include", "Supplement", "Revise", "Exclude"];
   const bucket = {};
   for (const c of cols) bucket[c] = [];
@@ -934,7 +966,12 @@ function renderB() {
     bucket[d ? d[0].toUpperCase() + d.slice(1) : "Unreviewed"].push(f);
   }
   for (const c of cols) board.append(boardColumn(c, bucket[c]));
-  app.append(board);
+  app.append(mobileHint, board);
+  requestAnimationFrame(() => {
+    if (window.innerWidth > 640) return;
+    const target = board.children[state.boardFocusColumn];
+    if (target) board.scrollLeft = target.offsetLeft - board.offsetLeft - 8;
+  });
   if (state.modalFigure || state.compareSel.length === 2) renderBModal();
 }
 

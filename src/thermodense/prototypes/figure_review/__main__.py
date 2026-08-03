@@ -37,7 +37,8 @@ def main() -> None:
     )
     httpd = http.server.ThreadingHTTPServer((HOST, PORT), handler)
     url = f"http://{HOST}:{PORT}/?variant=B"
-    threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    if os.environ.get("THERMODENSE_FIGURE_REVIEW_NO_OPEN") != "1":
+        threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     print(f"PROTOTYPE figure-review workbench -> {url}  (Ctrl+C to stop)")
     try:
         httpd.serve_forever()

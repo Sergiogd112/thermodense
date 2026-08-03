@@ -124,6 +124,7 @@ body {
   padding: 2px 6px; border-radius: 4px; margin-left: 6px; vertical-align: 2px;
 }
 .topbar .spacer { flex: 1; }
+.topbar-controls { display: flex; align-items: center; gap: 12px; }
 .topbar select, .topbar button {
   font: inherit; padding: 5px 10px; border: 1px solid var(--line);
   border-radius: 6px; background: var(--control); color: var(--ink); cursor: pointer;
@@ -289,7 +290,7 @@ body {
 .b-board { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 14px; flex: 1 1 auto; min-height: 0; }
 .b-col {
   background: var(--well); border-radius: 8px; display: flex; flex-direction: column;
-  min-height: 0; padding: 8px;
+  min-height: 0; padding: 8px; overflow-y: auto;
 }
 .b-col h3 { font-size: 12.5px; margin: 0 0 8px; text-align: center; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
 .b-col.drag-over { outline: 2px dashed var(--accent); }
@@ -299,8 +300,17 @@ body {
 }
 .b-card img { width: 100%; height: 74px; object-fit: cover; border-radius: 4px; border: 1px solid var(--line); }
 .b-card .t { font-size: 12px; font-weight: 600; margin-top: 4px; }
-.b-card .row2 { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+.b-card .row2 { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 6px; }
 .b-card label { font-size: 11px; color: var(--muted); }
+.b-card .card-decision {
+  min-width: 0; max-width: 108px; padding: 3px 5px; border: 1px solid var(--line);
+  border-radius: 5px; background: var(--control); color: var(--ink); font: inherit; font-size: 11px;
+}
+.b-card .row2 button {
+  padding: 3px 7px; border: 1px solid var(--line); border-radius: 5px;
+  background: var(--control); color: var(--ink); font: inherit; font-size: 11px; cursor: pointer;
+}
+.b-mobile-hint { display: none; }
 .modal-backdrop {
   position: fixed; inset: 0; background: var(--modal-scrim); z-index: 40;
   display: flex; align-items: center; justify-content: center; padding: 24px;
@@ -345,4 +355,58 @@ body {
   .b-board { grid-template-columns: repeat(3, 1fr); }
   .c-wrap { grid-template-columns: 300px 1fr; }
   .c-manifest { display: none; }
+}
+
+@media (max-width: 640px) {
+  .topbar {
+    position: relative; display: grid; grid-template-columns: 1fr; gap: 5px; padding: 7px 8px 0;
+    overflow: visible;
+  }
+  .topbar .spacer, .topbar > .chip { display: none; }
+  .brand { min-height: 30px; display: flex; align-items: center; }
+  .topbar-controls {
+    display: flex; gap: 6px; margin: 0 -8px; padding: 0 8px 7px;
+    overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none;
+  }
+  .topbar-controls::-webkit-scrollbar { display: none; }
+  .topbar-controls select, .topbar-controls button { flex: 0 0 auto; min-height: 40px; padding: 7px 10px; }
+  .profile-banner {
+    max-height: 46px; overflow-y: auto; padding: 5px 8px; font-size: 10.5px; line-height: 1.35;
+  }
+  .profile-banner .advisory-note { display: none; }
+
+  .b-mobile-hint {
+    display: block; flex: 0 0 auto; padding: 6px 10px; border-bottom: 1px solid var(--line);
+    background: var(--panel); color: var(--muted); font-size: 11px; text-align: center;
+  }
+  .b-board {
+    display: flex; gap: 10px; padding: 8px 8px 72px; overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory; scroll-padding-inline: 8px; overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .b-col {
+    flex: 0 0 calc(100vw - 16px); scroll-snap-align: start; scroll-snap-stop: always;
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  .b-col h3 { position: sticky; top: 0; z-index: 2; padding: 5px; background: var(--well); }
+  .b-card { padding: 10px; cursor: default; }
+  .b-card img { height: auto; max-height: 190px; object-fit: contain; background: var(--image-bg); }
+  .b-card .row2 { margin-top: 10px; }
+  .b-card label { display: inline-flex; align-items: center; min-height: 40px; font-size: 12px; }
+  .b-card label input { width: 20px; height: 20px; }
+  .b-card .card-decision { max-width: none; min-height: 40px; flex: 1; font-size: 13px; }
+  .b-card .row2 button { min-width: 52px; min-height: 40px; font-size: 13px; }
+
+  .modal-backdrop { padding: 0; align-items: stretch; }
+  .modal { width: 100%; height: 100dvh; max-height: none; border-radius: 0; padding: 12px; }
+  .modal .close {
+    position: sticky; top: 0; z-index: 5; min-width: 44px; min-height: 44px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  }
+  .compare-grid { grid-template-columns: 1fr; }
+  .print-stage { padding: 10px; }
+
+  .switcher { bottom: 8px; max-width: calc(100vw - 16px); gap: 6px; padding: 6px 9px; }
+  .switcher .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .switcher .hint { display: none; }
 }

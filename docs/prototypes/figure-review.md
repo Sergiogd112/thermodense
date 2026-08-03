@@ -40,6 +40,12 @@ PYTHONPATH=src python -m thermodense.prototypes.figure_review
   figures with embedded TrueType fonts; PDFs are downloadable from figure detail.
 - Appearance: follows the operating-system preference by default, with explicit
   Light and Dark overrides shared by all three variants.
+- Mobile board: one swipe-snapped decision column at a time, explicit card
+  decision selectors as the touch alternative to drag-and-drop, and full-screen
+  detail/compare surfaces.
+- Tailnet delivery: the localhost-only server runs as an enabled user service
+  and is proxied tailnet-only at `/figure-review/` on the workstation's existing
+  Tailscale HTTPS hostname; the root route remains assigned to t3code.
 - Physical print-size view: imposes each figure at its intended LaTeX width on a
   complete, physically scaled A4 sheet (21 × 29.7 cm) with visible paper margins.
   A ruler-based 10 cm calibration compensates
