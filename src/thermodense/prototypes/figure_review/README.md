@@ -3,7 +3,7 @@
 **Question being answered:** *What minimal local-first figure-review interface
 should let one researcher rapidly browse and compare rendered figures, inspect
 provenance and underlying analysis artifacts, mark outputs as
-included/supplemented/revised/excluded, attach figure- or panel-level comments
+included/appendix/revised/excluded, attach figure- or panel-level comments
 separately as scientific interpretation, limitation, caption, or presentation
 requests, and export a versioned machine-readable review manifest that
 publication workflows can consume without rerunning analyses?*
@@ -72,7 +72,7 @@ throwaway prototype for comparison.
 
 All variants share: figure/panel-level comments typed as
 `scientific` / `limitation` / `caption` / `presentation`, the
-`include` / `supplement` / `revise` / `exclude` decision set, claim-evidence
+`include` / `appendix` / `revise` / `exclude` decision set, claim-evidence
 cards, SHA-256 integrity verification of each preview and publication artifact,
 a System / Light / Dark appearance control, and AGU/Wiley and Copernicus journal
 profiles whose warnings are **advisory only — never scientific approval**.
@@ -111,7 +111,8 @@ representations independently. Example:
 ## Manifest
 
 Export produces `review-manifest-<figureSetVersion>-<timestamp>.json`
-(`manifestVersion 0.3-prototype`), import rehydrates it. Fields: figures
+(`manifestVersion 0.4-prototype`), import rehydrates it. Legacy `supplement`
+decisions import as `appendix`. Fields: figures
 (decision, comments, claimCardIds, preview contentSha256, publication PDF path /
 format / sha256, intended `printWidthCm`), claims (verdict), profile.
 

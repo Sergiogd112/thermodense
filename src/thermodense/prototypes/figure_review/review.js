@@ -19,7 +19,7 @@ const VARIANTS = [
   { key: "C", name: "Claim-first — manifest audit" },
 ];
 
-const DECISIONS = ["include", "supplement", "revise", "exclude"];
+const DECISIONS = ["include", "appendix", "revise", "exclude"];
 const COMMENT_TYPES = ["scientific", "limitation", "caption", "presentation"];
 const VERDICTS = ["supported", "unsupported", "needs-work", "not-assessed"];
 const CSS_PX_PER_CM = 96 / 2.54;
@@ -850,7 +850,7 @@ function renderA() {
   hint.className = "kbd-hint";
   hint.innerHTML =
     "<kbd>j</kbd>/<kbd>k</kbd> prev/next · " +
-    "<kbd>i</kbd> include <kbd>s</kbd> supplement <kbd>r</kbd> revise <kbd>e</kbd> exclude · " +
+    "<kbd>i</kbd> include <kbd>a</kbd> appendix <kbd>r</kbd> revise <kbd>e</kbd> exclude · " +
     "<kbd>x</kbd> clear decision · <kbd>←</kbd>/<kbd>→</kbd> switch variant";
   list.append(hint);
   app.append(wrap);
@@ -875,7 +875,7 @@ function boardColumn(col, figs) {
     section.classList.remove("drag-over");
     const id = e.dataTransfer.getData("text/plain");
     if (id) {
-      state.boardFocusColumn = ["Unreviewed", "Include", "Supplement", "Revise", "Exclude"].indexOf(col);
+      state.boardFocusColumn = ["Unreviewed", "Include", "Appendix", "Revise", "Exclude"].indexOf(col);
       setDecision(id, col === "Unreviewed" ? null : col.toLowerCase());
     }
   };
@@ -916,7 +916,7 @@ function boardColumn(col, figs) {
     for (const [value, label] of [
       ["", "Unreviewed"],
       ["include", "Include"],
-      ["supplement", "Supplement"],
+      ["appendix", "Appendix"],
       ["revise", "Revise"],
       ["exclude", "Exclude"],
     ]) {
@@ -929,7 +929,7 @@ function boardColumn(col, figs) {
     move.onclick = (e) => e.stopPropagation();
     move.onchange = (e) => {
       e.stopPropagation();
-      state.boardFocusColumn = ["", "include", "supplement", "revise", "exclude"].indexOf(move.value);
+      state.boardFocusColumn = ["", "include", "appendix", "revise", "exclude"].indexOf(move.value);
       setDecision(f.id, move.value || null);
     };
     const open = document.createElement("button");
@@ -958,7 +958,7 @@ function renderB() {
   const mobileHint = document.createElement("div");
   mobileHint.className = "b-mobile-hint";
   mobileHint.textContent = "Swipe between decision columns · use Move to… on a card";
-  const cols = ["Unreviewed", "Include", "Supplement", "Revise", "Exclude"];
+  const cols = ["Unreviewed", "Include", "Appendix", "Revise", "Exclude"];
   const bucket = {};
   for (const c of cols) bucket[c] = [];
   for (const f of state.data.figures) {
@@ -1104,7 +1104,7 @@ function renderC() {
 
 function buildManifest() {
   return {
-    manifestVersion: "0.3-prototype",
+    manifestVersion: "0.4-prototype",
     figureSetVersion: state.data.figureSetVersion,
     profile: state.review.profile,
     exportedAt: new Date().toISOString(),
@@ -1152,8 +1152,11 @@ function importManifest(file) {
       if (!Array.isArray(m.figures)) throw new Error("no figures array");
       for (const fr of m.figures) {
         if (!state.review.figures[fr.id]) continue;
+        const importedDecision = fr.decision === "supplement"
+          ? "appendix"
+          : fr.decision;
         state.review.figures[fr.id].decision =
-          DECISIONS.includes(fr.decision) ? fr.decision : null;
+          DECISIONS.includes(importedDecision) ? importedDecision : null;
         state.review.figures[fr.id].comments = Array.isArray(fr.comments)
           ? fr.comments.map((c) => ({
               level: c.level === "panel" ? "panel" : "figure",
@@ -1251,8 +1254,8 @@ document.addEventListener("keydown", (e) => {
         (id) => !state.review.figures[id].decision && id !== state.selectedFigure
       );
       if (next) state.selectedFigure = next;
-    } else if (e.key === "i" || e.key === "s" || e.key === "r" || e.key === "e" || e.key === "x") {
-      const key = { i: "include", s: "supplement", r: "revise", e: "exclude", x: null }[e.key];
+    } else if (e.key === "i" || e.key === "a" || e.key === "r" || e.key === "e" || e.key === "x") {
+      const key = { i: "include", a: "appendix", r: "revise", e: "exclude", x: null }[e.key];
       if (state.selectedFigure) {
         const r = state.review.figures[state.selectedFigure];
         r.decision = r.decision === key ? null : key;

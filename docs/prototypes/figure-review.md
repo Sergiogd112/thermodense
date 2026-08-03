@@ -12,7 +12,7 @@ See
 [issue #15](https://github.com/Sergiogd112/thermodense/issues/15):
 what minimal local-first figure-review interface should let one researcher
 rapidly browse and compare rendered figures, inspect provenance and underlying
-analysis artifacts, mark outputs as included/supplemented/revised/excluded,
+analysis artifacts, mark outputs as included/appendix/revised/excluded,
 attach figure- or panel-level comments separately as scientific interpretation,
 limitation, caption, or presentation requests, and export a versioned
 machine-readable review manifest that publication workflows can consume without
@@ -51,7 +51,7 @@ PYTHONPATH=src python -m thermodense.prototypes.figure_review
   A ruler-based 10 cm calibration compensates
   for monitor density, operating-system scaling, and browser zoom; calibration
   stays device-local while the intended `printWidthCm` travels in the manifest.
-- Decide: `include` / `supplement` / `revise` / `exclude` per figure.
+- Decide: `include` / `appendix` / `revise` / `exclude` per figure.
 - Comment: figure-level and panel-level, typed `scientific` / `limitation` /
   `caption` / `presentation`.
 - Claim-evidence cards with verdicts.
