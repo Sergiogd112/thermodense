@@ -37,6 +37,11 @@ PYTHONPATH=src python -m thermodense.prototypes.figure_review
   figures with embedded TrueType fonts; PDFs are downloadable from figure detail.
 - Appearance: follows the operating-system preference by default, with explicit
   Light and Dark overrides shared by all three variants.
+- Physical print-size view: imposes each figure at its intended LaTeX width on a
+  complete, physically scaled A4 sheet (21 × 29.7 cm) with visible paper margins.
+  A ruler-based 10 cm calibration compensates
+  for monitor density, operating-system scaling, and browser zoom; calibration
+  stays device-local while the intended `printWidthCm` travels in the manifest.
 - Decide: `include` / `supplement` / `revise` / `exclude` per figure.
 - Comment: figure-level and panel-level, typed `scientific` / `limitation` /
   `caption` / `presentation`.

@@ -22,11 +22,17 @@ const VARIANTS = [
 const DECISIONS = ["include", "supplement", "revise", "exclude"];
 const COMMENT_TYPES = ["scientific", "limitation", "caption", "presentation"];
 const VERDICTS = ["supported", "unsupported", "needs-work", "not-assessed"];
+const CSS_PX_PER_CM = 96 / 2.54;
+const CALIBRATION_KEY = "thermodense.figureReview.physicalScale.v1";
 
 const state = {
   data: null,
   variant: initVariant(),
   appearance: "system",
+  viewMode: "screen",
+  printWidths: {},
+  calibration: loadCalibration(),
+  calibrationOpen: false,
   selectedFigure: null,
   selectedClaim: null,
   compareSel: [],
@@ -39,6 +45,56 @@ function initVariant() {
   return VARIANTS.some((x) => x.key === v) ? v : "A";
 }
 
+function loadCalibration() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CALIBRATION_KEY));
+    if (
+      Number.isFinite(saved?.scale) &&
+      saved.scale >= 0.5 &&
+      saved.scale <= 2 &&
+      Number.isFinite(saved?.dpr)
+    ) {
+      const current = Math.abs(saved.dpr - window.devicePixelRatio) < 0.01;
+      return {
+        scale: current ? saved.scale : 1,
+        savedDpr: saved.dpr,
+        saved: current,
+        stale: !current,
+      };
+    }
+  } catch {
+    // Device calibration is optional; an invalid local value falls back safely.
+  }
+  return { scale: 1, savedDpr: null, saved: false, stale: false };
+}
+
+function calibrationIsCurrent() {
+  return state.calibration.saved &&
+    Math.abs(state.calibration.savedDpr - window.devicePixelRatio) < 0.01;
+}
+
+function calibrationIsStale() {
+  return state.calibration.stale || (
+    state.calibration.saved && !calibrationIsCurrent()
+  );
+}
+
+function effectivePhysicalScale() {
+  return calibrationIsStale() ? 1 : state.calibration.scale;
+}
+
+function physicalPx(cm) {
+  return cm * CSS_PX_PER_CM * effectivePhysicalScale();
+}
+
+let observedDpr = window.devicePixelRatio;
+window.addEventListener("resize", () => {
+  if (Math.abs(observedDpr - window.devicePixelRatio) < 0.01) return;
+  observedDpr = window.devicePixelRatio;
+  if (state.calibration.saved) state.calibration.stale = true;
+  if (state.data && state.viewMode === "print") render();
+});
+
 /* ---------------- data & review state ---------------- */
 
 async function loadData() {
@@ -46,6 +102,7 @@ async function loadData() {
   state.data = await res.json();
   for (const f of state.data.figures) {
     state.review.figures[f.id] = { decision: null, comments: [] };
+    state.printWidths[f.id] = Number(f.printWidthCm) || 8.5;
   }
   for (const c of state.data.claims) {
     state.review.claims[c.id] = { verdict: "not-assessed" };
@@ -91,6 +148,45 @@ function setAppearance(appearance) {
   } else {
     document.documentElement.dataset.theme = appearance;
   }
+}
+
+function setViewMode(mode) {
+  state.viewMode = mode === "print" ? "print" : "screen";
+  render();
+}
+
+function applyPhysicalSizing(root = document) {
+  for (const el of root.querySelectorAll("[data-physical-width-cm]")) {
+    el.style.width = `${physicalPx(Number(el.dataset.physicalWidthCm))}px`;
+  }
+  for (const el of root.querySelectorAll("[data-physical-height-cm]")) {
+    el.style.height = `${physicalPx(Number(el.dataset.physicalHeightCm))}px`;
+  }
+  for (const el of root.querySelectorAll("[data-physical-font-pt]")) {
+    const pt = Number(el.dataset.physicalFontPt);
+    el.style.fontSize = `${pt * (96 / 72) * effectivePhysicalScale()}px`;
+  }
+  for (const el of root.querySelectorAll("[data-physical-padding-x-cm]")) {
+    const x = physicalPx(Number(el.dataset.physicalPaddingXCm));
+    const y = physicalPx(Number(el.dataset.physicalPaddingYCm));
+    el.style.padding = `${y}px ${x}px`;
+  }
+}
+
+function saveCalibration() {
+  state.calibration.saved = true;
+  state.calibration.stale = false;
+  state.calibration.savedDpr = window.devicePixelRatio;
+  try {
+    localStorage.setItem(CALIBRATION_KEY, JSON.stringify({
+      scale: state.calibration.scale,
+      dpr: state.calibration.savedDpr,
+    }));
+  } catch {
+    // The current session still remains calibrated if storage is unavailable.
+  }
+  state.calibrationOpen = false;
+  render();
 }
 
 /* ---------------- advisory checks ---------------- */
@@ -351,6 +447,23 @@ function header() {
   appearance.onchange = () => setAppearance(appearance.value);
   bar.append(appearance);
 
+  const view = document.createElement("select");
+  view.className = "view-select";
+  view.title = "Figure display scale";
+  view.setAttribute("aria-label", "Figure display scale");
+  for (const [value, label] of [
+    ["screen", "View: Fit screen"],
+    ["print", "View: Physical print size"],
+  ]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    view.append(option);
+  }
+  view.value = state.viewMode;
+  view.onchange = () => setViewMode(view.value);
+  bar.append(view);
+
   const exp = document.createElement("button");
   exp.className = "primary";
   exp.textContent = "Export manifest";
@@ -381,11 +494,166 @@ function header() {
   banner.append(note);
 
   const wrap = document.createElement("div");
+  wrap.className = "app-header";
   wrap.append(bar, banner);
   return wrap;
 }
 
 /* ---------------- figure detail (shared by A and C) ---------------- */
+
+function calibrationPanel() {
+  const panel = document.createElement("section");
+  panel.className = "calibration-panel";
+
+  const heading = document.createElement("strong");
+  heading.textContent = "Calibrate this display";
+  const instructions = document.createElement("p");
+  instructions.textContent =
+    "Hold a physical ruler against the line. Adjust until the end marks are exactly 10.0 cm apart.";
+
+  const rulerWrap = document.createElement("div");
+  rulerWrap.className = "calibration-ruler-wrap";
+  const ruler = document.createElement("div");
+  ruler.className = "calibration-ruler";
+  ruler.dataset.physicalWidthCm = "10";
+  ruler.setAttribute("aria-label", "Ten centimetre calibration line");
+  rulerWrap.append(ruler);
+
+  const sliderRow = document.createElement("div");
+  sliderRow.className = "calibration-slider";
+  const minus = document.createElement("span");
+  minus.textContent = "shorter";
+  const range = document.createElement("input");
+  range.type = "range";
+  range.min = "0.5";
+  range.max = "2";
+  range.step = "0.001";
+  range.value = String(state.calibration.scale);
+  range.setAttribute("aria-label", "Physical display scale");
+  const plus = document.createElement("span");
+  plus.textContent = "longer";
+  const readout = document.createElement("code");
+  readout.textContent = `${state.calibration.scale.toFixed(3)}×`;
+  range.oninput = () => {
+    state.calibration.scale = Number(range.value);
+    state.calibration.saved = false;
+    readout.textContent = `${state.calibration.scale.toFixed(3)}×`;
+    applyPhysicalSizing();
+  };
+  sliderRow.append(minus, range, plus, readout);
+
+  const actions = document.createElement("div");
+  actions.className = "calibration-actions";
+  const save = document.createElement("button");
+  save.className = "primary";
+  save.textContent = "Save calibration";
+  save.onclick = saveCalibration;
+  const reset = document.createElement("button");
+  reset.textContent = "Reset to browser estimate";
+  reset.onclick = () => {
+    state.calibration = { scale: 1, savedDpr: null, saved: false, stale: false };
+    try {
+      localStorage.removeItem(CALIBRATION_KEY);
+    } catch {
+      // Storage is optional; reset still applies to the current session.
+    }
+    render();
+  };
+  actions.append(save, reset);
+  panel.append(heading, instructions, rulerWrap, sliderRow, actions);
+  applyPhysicalSizing(panel);
+  return panel;
+}
+
+function printSizeControls(fig) {
+  const controls = document.createElement("section");
+  controls.className = "print-size-controls";
+
+  const widthLabel = document.createElement("label");
+  widthLabel.textContent = "LaTeX figure width";
+  const width = document.createElement("input");
+  width.type = "number";
+  width.min = "1";
+  width.max = "30";
+  width.step = "0.1";
+  width.value = String(state.printWidths[fig.id]);
+  width.setAttribute("aria-label", "LaTeX figure width in centimetres");
+  const unit = document.createElement("span");
+  unit.textContent = "cm";
+  width.onchange = () => {
+    state.printWidths[fig.id] = Math.max(1, Math.min(30, Number(width.value) || 8.5));
+    render();
+  };
+  widthLabel.append(width, unit);
+  controls.append(widthLabel);
+
+  for (const value of [5, 8.5, 17.8]) {
+    const preset = document.createElement("button");
+    preset.textContent = `${value} cm`;
+    preset.title = `Preview at ${value} cm wide`;
+    preset.onclick = () => {
+      state.printWidths[fig.id] = value;
+      render();
+    };
+    controls.append(preset);
+  }
+
+  const calibration = document.createElement("button");
+  calibration.textContent = calibrationIsCurrent()
+    ? "Display calibrated"
+    : "Calibrate physical scale";
+  calibration.className = calibrationIsCurrent() ? "calibrated" : "needs-calibration";
+  calibration.onclick = () => {
+    if (calibrationIsStale()) {
+      state.calibration = { scale: 1, savedDpr: null, saved: false, stale: true };
+    }
+    state.calibrationOpen = !state.calibrationOpen;
+    render();
+  };
+  controls.append(calibration);
+
+  const note = document.createElement("span");
+  note.className = "physical-note";
+  note.textContent = calibrationIsCurrent()
+    ? "Actual size at the current browser zoom. Recalibrate after zooming or changing displays."
+    : calibrationIsStale()
+      ? "Browser zoom or display scale changed; the old calibration was disabled. Recalibrate."
+      : "Browser estimate only until calibrated with a ruler.";
+  controls.append(note);
+  return controls;
+}
+
+function physicalPrintPreview(fig) {
+  const widthCm = state.printWidths[fig.id];
+  const stage = document.createElement("div");
+  stage.className = "print-stage";
+  const label = document.createElement("div");
+  label.className = "print-stage-label";
+  label.textContent = `A4 · actual-size target · 21 × 29.7 cm · figure ${widthCm} cm wide`;
+
+  const sheet = document.createElement("div");
+  sheet.className = "print-sheet";
+  sheet.dataset.physicalWidthCm = "21";
+  sheet.dataset.physicalHeightCm = "29.7";
+  sheet.dataset.physicalPaddingXCm = "1.6";
+  sheet.dataset.physicalPaddingYCm = "2";
+  const figureBlock = document.createElement("div");
+  figureBlock.className = "print-figure-block";
+  figureBlock.dataset.physicalWidthCm = String(widthCm);
+  const image = document.createElement("img");
+  image.className = "figure print-figure";
+  image.src = fig.src;
+  image.alt = fig.title;
+  const caption = document.createElement("p");
+  caption.className = "print-caption";
+  caption.dataset.physicalFontPt = "10";
+  caption.textContent = `Figure. ${fig.caption}`;
+  figureBlock.append(image, caption);
+  sheet.append(figureBlock);
+  stage.append(label, sheet);
+  applyPhysicalSizing(stage);
+  return stage;
+}
 
 async function figureDetail(figId, opts = {}) {
   const f = figById(figId);
@@ -416,17 +684,23 @@ async function figureDetail(figId, opts = {}) {
     main.append(publication);
   }
 
-  const img = document.createElement("img");
-  img.className = "figure";
-  img.src = f.src;
-  img.alt = f.title;
-  main.append(img);
+  if (state.viewMode === "print") {
+    main.append(printSizeControls(f));
+    if (state.calibrationOpen) main.append(calibrationPanel());
+    main.append(physicalPrintPreview(f));
+  } else {
+    const img = document.createElement("img");
+    img.className = "figure";
+    img.src = f.src;
+    img.alt = f.title;
+    main.append(img);
 
-  const cap = document.createElement("p");
-  cap.style.fontSize = "12.5px";
-  cap.style.color = "var(--muted)";
-  cap.textContent = "Caption: " + f.caption;
-  main.append(cap);
+    const cap = document.createElement("p");
+    cap.style.fontSize = "12.5px";
+    cap.style.color = "var(--muted)";
+    cap.textContent = "Caption: " + f.caption;
+    main.append(cap);
+  }
 
   const panels = document.createElement("div");
   panels.className = "a-panels";
@@ -793,7 +1067,7 @@ function renderC() {
 
 function buildManifest() {
   return {
-    manifestVersion: "0.2-prototype",
+    manifestVersion: "0.3-prototype",
     figureSetVersion: state.data.figureSetVersion,
     profile: state.review.profile,
     exportedAt: new Date().toISOString(),
@@ -804,6 +1078,7 @@ function buildManifest() {
       comments: state.review.figures[f.id].comments.map((c) => ({ ...c })),
       claimCardIds: f.claimCardIds,
       contentSha256: f.sha256,
+      printWidthCm: state.printWidths[f.id],
       publication: f.publicationSrc
         ? {
             format: f.publicationFormat,
@@ -851,6 +1126,9 @@ function importManifest(file) {
               createdAt: c.createdAt ?? new Date().toISOString(),
             }))
           : [];
+        if (Number.isFinite(fr.printWidthCm) && fr.printWidthCm >= 1 && fr.printWidthCm <= 30) {
+          state.printWidths[fr.id] = fr.printWidthCm;
+        }
       }
       if (Array.isArray(m.claims)) {
         for (const cr of m.claims) {

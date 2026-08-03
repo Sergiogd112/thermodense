@@ -391,6 +391,7 @@ def main() -> None:
             "publicationSrc": f"figures/{pdf_path.name}",
             "publicationSha256": sha256(pdf_path),
             "publicationFormat": "application/pdf",
+            "printWidthCm": 8.5,
             "caption": captions[fid],
             "panels": [{"id": p, "label": lab} for p, lab in panels[fid]],
             "claimCardIds": ["claim-01", "claim-02"] if fid in ("fig-01", "fig-02") else [],
@@ -413,7 +414,7 @@ def main() -> None:
 
     data = {
         "prototype": True,
-        "figureSetVersion": "real-1-local-v2",
+        "figureSetVersion": "real-1-local-v3",
         "figures": figures,
         "claims": [
             {

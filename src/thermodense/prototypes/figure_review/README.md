@@ -43,6 +43,21 @@ cards, SHA-256 integrity verification of each preview and publication artifact,
 a System / Light / Dark appearance control, and AGU/Wiley and Copernicus journal
 profiles whose warnings are **advisory only — never scientific approval**.
 
+## Physical print-size preview
+
+Choose **View: Physical print size**, select a figure, and enter the same width
+used by LaTeX (for example `5 cm`). The preview shows a complete calibrated A4
+sheet (21 × 29.7 cm) with 1.6 cm side margins, 2 cm top/bottom margins, and the
+centred figure plus a 10 pt caption at that imposed physical size. Width presets
+are provided for 5, 8.5, and 17.8 cm; these are conveniences, not journal rules.
+
+CSS centimetres are not reliably physical across monitors. Open **Calibrate
+physical scale**, hold a ruler against the 10 cm line, and adjust until its end
+marks are exactly 10 cm apart. Calibration is stored locally with the current
+browser device-pixel ratio and is not part of the scientific manifest. The old
+scale is disabled when browser zoom or display scale changes; moving to another
+monitor may still require manual recalibration.
+
 ## LaTeX figure output
 
 The generator writes two representations from the same Matplotlib figure:
@@ -56,15 +71,15 @@ representations independently. Example:
 
 ```tex
 \usepackage{graphicx}
-\includegraphics[width=\linewidth]{figures/figure-01-graph.pdf}
+\includegraphics[width=5cm]{figures/figure-01-graph.pdf}
 ```
 
 ## Manifest
 
 Export produces `review-manifest-<figureSetVersion>-<timestamp>.json`
-(`manifestVersion 0.2-prototype`), import rehydrates it. Fields: figures
+(`manifestVersion 0.3-prototype`), import rehydrates it. Fields: figures
 (decision, comments, claimCardIds, preview contentSha256, publication PDF path /
-format / sha256), claims (verdict), profile.
+format / sha256, intended `printWidthCm`), claims (verdict), profile.
 
 ## Deliberately out of scope for this prototype
 

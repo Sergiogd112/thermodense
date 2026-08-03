@@ -1,6 +1,6 @@
 {
  "prototype": true,
- "figureSetVersion": "real-1-local-v2",
+ "figureSetVersion": "real-1-local-v3",
  "figures": [
   {
    "id": "fig-01",
@@ -10,6 +10,7 @@
    "publicationSrc": "figures/figure-01-graph.pdf",
    "publicationSha256": "eb0e6da4b07de16ec8730b43577d620755a784129107a8469c28b1bc385fceaf",
    "publicationFormat": "application/pdf",
+   "printWidthCm": 8.5,
    "caption": "Sample review figure generated from the committed real ParCorr results (prototype renderer). (a) primary 42-link graph; (b) links retained under the IAAFT structural control; (c) links retained under the circular-shift control. Dashed grey contemporaneous edges are labelled with the partial correlation; arrows are lagged cross links with lag \u03c4.",
    "panels": [
     {
@@ -59,6 +60,7 @@
    "publicationSrc": "figures/figure-02-retention.pdf",
    "publicationSha256": "81e577242caa9ba72dc764d3af7a607a7507163d596c91e56eeaedca8b49e484",
    "publicationFormat": "application/pdf",
+   "printWidthCm": 8.5,
    "caption": "(a) physical links retained vs added under each structural-control family; (b) spurious control\u2192physical links with median and max |r|.",
    "panels": [
     {
@@ -104,6 +106,7 @@
    "publicationSrc": "figures/figure-03-surrogates.pdf",
    "publicationSha256": "5ad651cd21255ead136c56b502705d142c4eece3018f659f68b96271a0b2243e",
    "publicationFormat": "application/pdf",
+   "printWidthCm": 8.5,
    "caption": "(a) relation types in the combined white-noise/periodic surrogate run (log scale, dashed line = 42 primary links); (b) surrogate links by family and the physical-subgraph link count of the surrogate run.",
    "panels": [
     {
