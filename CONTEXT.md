@@ -20,6 +20,10 @@ _Avoid_: MSISE 2.1
 The paired Jacchia--Bowman empirical total-density model outputs evaluated on the same timestamps, locations, altitudes, and reference samples as the MSIS-family baselines, so both JB versions can be compared consistently with each other and with the existing model log-density-ratio errors.
 _Avoid_: adding JB2008 alone when the post-thesis empirical-model comparison calls for both JB2006 and JB2008
 
+**Thesis-continuation paper**:
+The first paper preserves the thesis's main goal, specific objectives, overall structure, and combined dependence-analysis, empirical-model, and causal-discovery scope, while strengthening the evidence with refreshed sources, more complete analysis, and the paired JB2006/JB2008 baselines alongside the MSIS family. Its empirical-model comparison is one part of the broader thermospheric-density study rather than a standalone matched-error benchmark.
+_Avoid_: narrowing the first paper to only empirical-model benchmarking; replacing the thesis question with a new question merely because the paper is more complete
+
 **TU Delft satellite density dataset**:
 The accelerometer-derived thermospheric density dataset formed from the available TU Delft CHAMP, GOCE, GRACE-A, GRACE-B, GRACE-FO, Swarm-A, Swarm-B, and Swarm-C mission files.
 _Avoid_: all satellites unless the included missions are specified
@@ -196,6 +200,7 @@ _Avoid_: filling every internal gap; source-specific silent interpolation
 
 - **NRLMSISE-00**, **NRLMSIS 2.0**, and **NRLMSIS 2.1** are compared as empirical model baselines against observed or assimilated thermospheric density.
 - **JB2006 and JB2008 density baselines** extend the empirical-model comparison as a pair and use the same reference samples and **Model log-density-ratio error** convention as the MSIS-family baselines.
+- The **Thesis-continuation paper** retains the thesis's broad density-variability and forcing question; its expanded JB/MSIS comparison supports that question without becoming the paper's sole organizing claim.
 - **Global mean thermospheric density** provides the broadest density reference for time-scale, correlation, binning, and selected causal-discovery analysis before the more sampling-specific TU Delft and HASDM analyses.
 - The **TU Delft satellite density dataset** supports both the observation-only **TU Delft density analysis** and the **Model log-density-ratio error** comparison against **NRLMSISE-00**, **NRLMSIS 2.0**, and **NRLMSIS 2.1**.
 - The **Mauna Loa MSIS density baselines** are evaluated on the same samples as the **Mauna Loa HASDM subset** before being transformed into **Model log-density-ratio error**.
