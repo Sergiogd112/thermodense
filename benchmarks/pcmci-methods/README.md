@@ -1,8 +1,8 @@
-# PCMCI method CPU benchmark
+# PCMCI method benchmark
 
 This is the frozen synthetic phase for comparing Tigramite PCMCI methods. It runs a deterministic, standardized five-node stable autoregressive process (seed `20260731`) at paired progressive scales: small (`512`, `tau_max=7`), medium (`2048`, `30`), and representative (`8400`, `180`). It measures prepared-array PCMCI computation only: no scientific preprocessing or plotting is included.
 
-Runnable methods are `parcorr`, `cmiknn`, and `gpdc`; `gpdctorch` is explicitly deferred. The verified Auriga driver is incompatible with the locked Torch CUDA 13 environment. This benchmark is a computational comparison, not evidence about the real-data scientific result or conditional-independence validity.
+Runnable methods are `parcorr`, `cmiknn`, `gpdc`, and `gpdctorch`. GPDCtorch uses CUDA when Torch detects a compatible GPU and is enabled through the exact Tigramite commit from [PR #501](https://github.com/jakobrunge/tigramite/pull/501), pinned in `uv.lock`. CMIknn is subject to a current-compute resource cap of at most 10 lag steps, so only its small (`tau_max=7`) synthetic case is scheduled. The cap is an operational boundary for this project, not a Tigramite algorithm limit. This benchmark is a computational comparison, not evidence about the real-data scientific result or conditional-independence validity.
 
 Run locally or on a remote executor from a repo checkout:
 
@@ -35,14 +35,20 @@ PCMCI:
 ```sh
 uv run python -m thermodense.benchmarks.real_data
 uv run python -m thermodense.benchmarks.pcmci_real run \
-  --output results-real.jsonl --methods parcorr cmiknn \
-  --tau-max 180 --cmiknn-workers 24
+  --output results-real.jsonl --methods parcorr gpdctorch \
+  --tau-max 180
+
+# CMIknn must be run separately with no more than 10 daily lag steps.
+uv run python -m thermodense.benchmarks.pcmci_real run \
+  --output results-real-cmiknn.jsonl --methods cmiknn \
+  --tau-max 10 --cmiknn-workers 24
 ```
 
 The real runner preserves the consecutive daily calendar, retains unavailable
 CO2 days as missing observations, and writes both provenance JSONL and canonical
-compressed NPZ matrices. GPDC is deferred for this stage because the synthetic
-CPU results project a multi-week representative run.
+compressed NPZ matrices. CPU GPDC is deferred for this stage because the
+synthetic CPU results project a multi-week representative run; GPDCtorch is the
+GPU implementation used for the representative nonlinear analysis.
 
 The separate ParCorr-only IAAFT and circular-shift control robustness runner
 does not modify either primary runner. It preprocesses the physical nodes once,

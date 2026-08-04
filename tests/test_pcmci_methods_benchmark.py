@@ -7,6 +7,7 @@ import sys
 import tomllib
 
 import numpy as np
+import pytest
 
 from thermodense.benchmarks import pcmci_methods as benchmark
 
@@ -26,16 +27,17 @@ def test_synthetic_generation_is_deterministic_and_standardized() -> None:
     assert not np.isnan(first).any()
 
 
-def test_plan_is_exact_and_excludes_deferred_gpdctorch() -> None:
+def test_plan_includes_gpdctorch_and_caps_cmiknn_at_ten_lag_steps() -> None:
     document = benchmark.plan_document()
     assert [(case.method, case.level) for case in benchmark.benchmark_plan()] == [
         (method, level)
-        for method in ("parcorr", "cmiknn", "gpdc")
+        for method in ("parcorr", "cmiknn", "gpdc", "gpdctorch")
         for level in ("small", "medium", "representative")
+        if not (method == "cmiknn" and level != "small")
     ]
-    assert len(document["cases"]) == 9
-    assert "gpdctorch" not in document["methods"]
-    assert "gpdctorch" in document["deferred_methods"]
+    assert len(document["cases"]) == 10
+    assert "gpdctorch" in document["methods"]
+    assert document["deferred_methods"] == {}
 
 
 def test_spec_toml_parity_with_module_constants() -> None:
@@ -58,7 +60,6 @@ def test_spec_toml_parity_with_module_constants() -> None:
             **settings,
         }
     document = benchmark.plan_document()
-    assert spec["deferred"]["gpdctorch"]["reason"] == document["deferred_methods"]["gpdctorch"]
     assert document["spec_digest"] is not None
     assert len(document["spec_digest"]) == 64
 
@@ -74,7 +75,17 @@ def test_cmiknn_workers_override_is_probe_only() -> None:
     assert benchmark.method_settings("gpdc", cmiknn_workers=24) == benchmark.method_settings(
         "gpdc"
     )
+    assert benchmark.method_settings(
+        "gpdctorch", cmiknn_workers=24
+    ) == benchmark.method_settings("gpdctorch")
     assert benchmark.method_settings("cmiknn")["workers"] == 1
+
+
+def test_direct_cmiknn_case_rejects_more_than_ten_lag_steps() -> None:
+    with pytest.raises(ValueError, match="resource limit of 10 lag steps"):
+        benchmark.run_pcmci_case(
+            benchmark.Case("cmiknn", "custom", samples=64, tau_max=11)
+        )
 
 
 def test_progressive_stop_skips_only_the_failed_method(
@@ -84,12 +95,12 @@ def test_progressive_stop_skips_only_the_failed_method(
 
     def fake_case(case, timeout, threads, cmiknn_workers=None):
         calls.append((case.method, case.level))
-        if case.method == "cmiknn" and case.level == "small":
+        if case.method == "gpdc" and case.level == "small":
             return {"status": "failed", "failure_reason": "fixture failure"}
         return {"status": "succeeded", "matrix_shapes": {}, "result_digest": "x"}
 
     monkeypatch.setattr(benchmark, "_run_isolated_case", fake_case)
-    args = _run_args(tmp_path / "results.jsonl", methods=["cmiknn", "gpdc"])
+    args = _run_args(tmp_path / "results.jsonl", methods=["gpdc", "gpdctorch"])
     assert benchmark.run_benchmark(args) == 0
     rows = _rows(args.output)
     assert [row["status"] for row in rows] == [
@@ -100,7 +111,12 @@ def test_progressive_stop_skips_only_the_failed_method(
         "succeeded",
         "succeeded",
     ]
-    assert calls == [("cmiknn", "small"), ("gpdc", "small"), ("gpdc", "medium"), ("gpdc", "representative")]
+    assert calls == [
+        ("gpdc", "small"),
+        ("gpdctorch", "small"),
+        ("gpdctorch", "medium"),
+        ("gpdctorch", "representative"),
+    ]
     assert "previous small case failed" in rows[1]["skip_reason"]
 
 

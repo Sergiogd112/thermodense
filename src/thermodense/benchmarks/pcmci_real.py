@@ -32,7 +32,7 @@ from thermodense.benchmarks.real_data import (
 
 SCHEMA_VERSION = "2"
 RUNNER_VERSION = "pcmci-real-2"
-METHODS = ("parcorr", "cmiknn")
+METHODS = ("parcorr", "cmiknn", "gpdctorch")
 DEFERRED_METHODS = {"gpdc": "explicitly deferred for real-data PCMCI+ runs"}
 DEFAULT_TAU_MAX = 180
 DEFAULT_CMIKNN_WORKERS = 24
@@ -258,14 +258,15 @@ def run_pcmciplus(
             f"input has {len(input_data.dates)} rows; PCMCI+ requires more than "
             f"2*tau_max={2 * tau_max} rows"
         )
+    runtime.validate_cmiknn_tau(method, tau_max)
     seed = _method_seed(method)
     random.seed(seed)
     np.random.seed(seed)
     settings = real_method_settings(method, cmiknn_workers)
-    test = (
-        ParCorr(significance="analytic")
-        if method == "parcorr"
-        else CMIknn(
+    if method == "parcorr":
+        test = ParCorr(significance="analytic")
+    elif method == "cmiknn":
+        test = CMIknn(
             significance="shuffle_test",
             sig_samples=20,
             sig_blocklength=4,
@@ -273,7 +274,10 @@ def run_pcmciplus(
             shuffle_neighbors=5,
             workers=cmiknn_workers,
         )
-    )
+    else:
+        from tigramite.independence_tests.gpdc_torch import GPDCtorch
+
+        test = GPDCtorch(significance="analytic")
     transformed = preprocess(input_data.values, input_data.dates)
     dataframe = pp.DataFrame(
         np.where(np.isfinite(transformed), transformed, MISSING_FLAG),
@@ -488,6 +492,8 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError(
                 "--timeout, --cmiknn-workers, and --threads must be positive; --tau-max must be non-negative."
             )
+        for method in args.methods or METHODS:
+            runtime.validate_cmiknn_tau(method, args.tau_max)
         return run(args)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)

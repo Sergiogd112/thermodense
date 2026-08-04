@@ -115,8 +115,54 @@ def test_cli_rejects_invalid_real_run_options(tmp_path: Path, capsys) -> None:
     assert parsed.cmiknn_workers == 24
     assert pcmci_real.main(["run", "--output", str(output), "--tau-max", "-1"]) == 2
     assert "--tau-max" in capsys.readouterr().err
+    parsed_gpu = pcmci_real.parser().parse_args(
+        ["run", "--output", str(output), "--methods", "gpdctorch"]
+    )
+    assert parsed_gpu.methods == ["gpdctorch"]
     with pytest.raises(SystemExit):
-        pcmci_real.main(["run", "--output", str(output), "--methods", "gpdc"])
+        pcmci_real.parser().parse_args(
+            ["run", "--output", str(output), "--methods", "gpdc"]
+        )
+
+
+def test_real_run_enforces_cmiknn_ten_lag_step_resource_cap(
+    tmp_path: Path, capsys
+) -> None:
+    output = tmp_path / "result.jsonl"
+
+    assert (
+        pcmci_real.main(
+            [
+                "run",
+                "--output",
+                str(output),
+                "--methods",
+                "cmiknn",
+                "--tau-max",
+                "11",
+            ]
+        )
+        == 2
+    )
+    assert "resource limit of 10 lag steps" in capsys.readouterr().err
+
+    parsed = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--output",
+            str(output),
+            "--methods",
+            "cmiknn",
+            "--tau-max",
+            "10",
+        ]
+    )
+    assert parsed.tau_max == 10
+    pcmci_real.runtime.validate_cmiknn_tau("cmiknn", parsed.tau_max)
+    assert pcmci_real.real_method_settings("gpdctorch", 24) == {
+        "pc_alpha": 0.05,
+        "significance": "analytic",
+    }
 
 
 def test_tiny_real_parcorr_pcmciplus_case(tmp_path: Path) -> None:

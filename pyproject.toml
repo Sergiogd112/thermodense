@@ -41,3 +41,6 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
+
+[tool.uv.sources]
+tigramite = { git = "https://github.com/Sergiogd112/tigramite.git", rev = "510b2251117bd4022ba9046b8cfc81815723d83a" }

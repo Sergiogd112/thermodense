@@ -26,10 +26,10 @@ from thermodense.benchmarks import runtime
 SPEC_RELATIVE_PATH = Path("benchmarks") / "pcmci-methods" / "spec.toml"
 
 SCHEMA_VERSION = "1"
-BENCHMARK_VERSION = "pcmci-methods-synthetic-1"
+BENCHMARK_VERSION = "pcmci-methods-synthetic-2"
 SEED = 20260731
 NODES = 5
-METHODS = ("parcorr", "cmiknn", "gpdc")
+METHODS = ("parcorr", "cmiknn", "gpdc", "gpdctorch")
 LEVELS = (
     ("small", 512, 7),
     ("medium", 2048, 30),
@@ -65,6 +65,10 @@ def benchmark_plan(
         Case(method, level, *level_specs[level])
         for method in methods
         for level in levels
+        if not (
+            method == "cmiknn"
+            and level_specs[level][1] > runtime.CMIKNN_MAX_TAU_STEPS
+        )
     ]
 
 
@@ -77,9 +81,7 @@ def plan_document() -> dict[str, Any]:
         "nodes": NODES,
         "methods": list(METHODS),
         "spec_digest": spec_digest(),
-        "deferred_methods": {
-            "gpdctorch": "Verified Auriga driver is incompatible with the locked Torch CUDA 13 environment."
-        },
+        "deferred_methods": {},
         "cases": [asdict(case) for case in benchmark_plan()],
     }
 
@@ -163,6 +165,7 @@ def git_commit() -> str | None:
 
 def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str, Any]:
     """Run one real PCMCI case; imported dependencies stay inside the child."""
+    runtime.validate_cmiknn_tau(case.method, case.tau_max)
     from tigramite import data_processing as pp
     from tigramite.independence_tests.cmiknn import CMIknn
     from tigramite.independence_tests.gpdc import GPDC
@@ -194,8 +197,12 @@ def run_pcmci_case(case: Case, *, cmiknn_workers: int | None = None) -> dict[str
             shuffle_neighbors=5,
             workers=settings["workers"],
         )
-    else:
+    elif case.method == "gpdc":
         test = GPDC(significance="analytic")
+    else:
+        from tigramite.independence_tests.gpdc_torch import GPDCtorch
+
+        test = GPDCtorch(significance="analytic")
     pcmci = PCMCI(dataframe=pp.DataFrame(data), cond_ind_test=test, verbosity=0)
     result = pcmci.run_pcmci(tau_max=case.tau_max, pc_alpha=0.05, alpha_level=0.05)
     matrices = {
@@ -383,7 +390,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(
                     f"  {case['method']} {case['level']}: n={case['samples']}, tau_max={case['tau_max']}"
                 )
-            print("  GPDCtorch: deferred (Auriga driver/Torch CUDA 13 incompatibility)")
+            print(
+                "  CMIknn: current-compute resource cap is "
+                f"tau_max <= {runtime.CMIKNN_MAX_TAU_STEPS}"
+            )
         return 0
     if args.command == "case":
         return _child_main(args)

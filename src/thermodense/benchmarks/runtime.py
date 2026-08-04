@@ -28,6 +28,17 @@ THREAD_ENVIRONMENT = (
     "BLIS_NUM_THREADS",
 )
 
+CMIKNN_MAX_TAU_STEPS = 10
+
+
+def validate_cmiknn_tau(method: str, tau_max: int) -> None:
+    """Enforce this project's current-compute CMIknn lag-step boundary."""
+    if method == "cmiknn" and tau_max > CMIKNN_MAX_TAU_STEPS:
+        raise ValueError(
+            "CMIknn tau_max exceeds the current-compute resource limit of "
+            f"{CMIKNN_MAX_TAU_STEPS} lag steps"
+        )
+
 
 def method_settings(method: str, cmiknn_workers: int | None = None) -> dict[str, Any]:
     """Return the shared independence-test settings for a named method."""
@@ -47,6 +58,8 @@ def method_settings(method: str, cmiknn_workers: int | None = None) -> dict[str,
             result = result | {"workers": cmiknn_workers}
         return result
     if method == "gpdc":
+        return settings | {"significance": "analytic"}
+    if method == "gpdctorch":
         return settings | {"significance": "analytic"}
     raise ValueError(f"Unknown benchmark method: {method}")
 

@@ -1452,7 +1452,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.17.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "sgp4", specifier = ">=2.25" },
-    { name = "tigramite", specifier = ">=5.2.10.1" },
+    { name = "tigramite", git = "https://github.com/Sergiogd112/tigramite.git?rev=510b2251117bd4022ba9046b8cfc81815723d83a" },
     { name = "torch", specifier = ">=2.12.0" },
 ]
 
@@ -1468,15 +1468,11 @@ wheels = [
 [[package]]
 name = "tigramite"
 version = "5.2.10.1"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/Sergiogd112/tigramite.git?rev=510b2251117bd4022ba9046b8cfc81815723d83a#510b2251117bd4022ba9046b8cfc81815723d83a" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },
     { name = "six" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b8/00/bd255715ea168a353dd8a7bdcd6de05383a047965eb2b09a3b5e5801143c/tigramite-5.2.10.1.tar.gz", hash = "sha256:376bff91e8461bd082cfb97bd6c635999efc554913afe2470369a2716a344724", size = 320565, upload-time = "2026-01-14T22:43:25.39Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3a/71/6282e828cbe155f2fc4a81e5a5f12cba72ce739a2ec88a790c5070cec52f/tigramite-5.2.10.1-py3-none-any.whl", hash = "sha256:1bba99ba05c3ba90bdc235b92e9d65d10b1744af73f9e0070c1d7204e6c81ddc", size = 314729, upload-time = "2026-01-14T22:43:23.812Z" },
 ]
 
 [[package]]
