@@ -1452,7 +1452,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.17.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "sgp4", specifier = ">=2.25" },
-    { name = "tigramite", git = "https://github.com/Sergiogd112/tigramite.git?rev=510b2251117bd4022ba9046b8cfc81815723d83a" },
+    { name = "tigramite", git = "https://github.com/Sergiogd112/tigramite.git?rev=2a57946eee7b9b003057a7bc3efb3ffb98bf247d" },
     { name = "torch", specifier = ">=2.12.0" },
 ]
 
@@ -1468,7 +1468,7 @@ wheels = [
 [[package]]
 name = "tigramite"
 version = "5.2.10.1"
-source = { git = "https://github.com/Sergiogd112/tigramite.git?rev=510b2251117bd4022ba9046b8cfc81815723d83a#510b2251117bd4022ba9046b8cfc81815723d83a" }
+source = { git = "https://github.com/Sergiogd112/tigramite.git?rev=2a57946eee7b9b003057a7bc3efb3ffb98bf247d#2a57946eee7b9b003057a7bc3efb3ffb98bf247d" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },

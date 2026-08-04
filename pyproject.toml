@@ -43,4 +43,4 @@ where = ["src"]
 pythonpath = ["src", "."]
 
 [tool.uv.sources]
-tigramite = { git = "https://github.com/Sergiogd112/tigramite.git", rev = "510b2251117bd4022ba9046b8cfc81815723d83a" }
+tigramite = { git = "https://github.com/Sergiogd112/tigramite.git", rev = "2a57946eee7b9b003057a7bc3efb3ffb98bf247d" }
