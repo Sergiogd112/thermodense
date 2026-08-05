@@ -60,6 +60,34 @@ test("legacy supplement imports as appendix and round-trips publication identity
   assert.equal(exported.figures[0].publication.sha256, "publication");
 });
 
+test("original 0.1 manifests require explicit cross-version migration", () => {
+  const legacy = {
+    manifestVersion: "0.1-prototype",
+    figureSetVersion: "set-v0",
+    profile: "agu",
+    figures: [{
+      id: "fig-1",
+      decision: "supplement",
+      comments: [{ type: "scientific", text: "Keep this evidence" }],
+      contentSha256: "legacy-preview",
+    }],
+    claims: [{ id: "claim-1", verdict: "needs-work" }],
+  };
+
+  assert.throws(
+    () => normalizeImportedManifest(legacy, figureSet),
+    /requires explicit figure-set migration/,
+  );
+  const migrated = normalizeImportedManifest(
+    legacy,
+    figureSet,
+    { allowLegacyMigration: true },
+  );
+  assert.equal(migrated.figures["fig-1"].decision, "appendix");
+  assert.equal(migrated.figures["fig-1"].comments[0].text, "Keep this evidence");
+  assert.equal(migrated.migratedFromVersion, "set-v0");
+});
+
 test("incompatible figure sets and artifact identities are rejected", () => {
   assert.throws(
     () => normalizeImportedManifest({

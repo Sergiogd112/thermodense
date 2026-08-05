@@ -5,6 +5,7 @@ import {
   VERDICTS,
   buildReviewManifest,
   draftStorageKey,
+  legacyMigrationCandidate,
   normalizeImportedManifest,
   physicalPixels,
 } from "./review-core.mjs";
@@ -115,8 +116,8 @@ function restoreDraft() {
   }
 }
 
-function applyImportedManifest(manifest) {
-  const imported = normalizeImportedManifest(manifest, state.data);
+function applyImportedManifest(manifest, options = {}) {
+  const imported = normalizeImportedManifest(manifest, state.data, options);
   state.review = {
     profile: imported.profile,
     figures: imported.figures,
@@ -1005,7 +1006,18 @@ function importManifest(file) {
   reader.onload = () => {
     try {
       const m = JSON.parse(reader.result);
-      applyImportedManifest(m);
+      try {
+        applyImportedManifest(m);
+      } catch (error) {
+        if (!legacyMigrationCandidate(m, state.data)) throw error;
+        const accepted = confirm(
+          `This manifest reviews figure set ${m.figureSetVersion}. ` +
+          `Migrate its decisions and comments to ${state.data.figureSetVersion}? ` +
+          "Artifact identities have changed and will be replaced by the current figure set.",
+        );
+        if (!accepted) throw new Error("legacy figure-set migration cancelled");
+        applyImportedManifest(m, { allowLegacyMigration: true });
+      }
       persistDraft();
       render();
     } catch (err) {

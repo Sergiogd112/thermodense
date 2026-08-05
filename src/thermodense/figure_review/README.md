@@ -49,7 +49,9 @@ Exports use `manifestVersion: "1.0"` and retain the figure-set version, journal
 profile, all decisions, typed comments, claim verdicts, print widths, preview
 hashes, and publication PDF identity. Import rejects a different figure-set
 version or artifact identity. Legacy `supplement` decisions migrate to
-`appendix`; new exports emit only `appendix`.
+`appendix`; new exports emit only `appendix`. Original `0.1-prototype` exports
+predate publication identity and use an older figure set, so they require an
+explicit confirmation before decisions/comments migrate to current artifacts.
 
 Display calibration is device state and is deliberately excluded from the
 scientific manifest. Journal and integrity checks are advisory and never imply

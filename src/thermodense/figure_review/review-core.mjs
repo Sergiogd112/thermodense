@@ -39,7 +39,13 @@ function normalizeComment(comment, figureId) {
   };
 }
 
-function verifyPublicationIdentity(imported, current) {
+function verifyPublicationIdentity(imported, current, allowLegacyMigration) {
+  if (allowLegacyMigration) {
+    if (!imported.contentSha256) {
+      throw new Error(`legacy preview identity missing for ${current.id}`);
+    }
+    return;
+  }
   if (imported.contentSha256 !== current.sha256) {
     throw new Error(`preview identity mismatch for ${current.id}`);
   }
@@ -59,17 +65,30 @@ function verifyPublicationIdentity(imported, current) {
   }
 }
 
-export function normalizeImportedManifest(manifest, figureSet) {
+export function legacyMigrationCandidate(manifest, figureSet) {
+  return manifest?.manifestVersion === "0.1-prototype" &&
+    manifest.figureSetVersion !== figureSet.figureSetVersion;
+}
+
+export function normalizeImportedManifest(
+  manifest,
+  figureSet,
+  { allowLegacyMigration = false } = {},
+) {
   if (!manifest || !Array.isArray(manifest.figures)) {
     throw new Error("manifest has no figures array");
   }
   const supportedVersion =
     manifest.manifestVersion === MANIFEST_VERSION ||
-    /^0\.[2-4]-prototype$/.test(manifest.manifestVersion ?? "");
+    /^0\.[1-4]-prototype$/.test(manifest.manifestVersion ?? "");
   if (!supportedVersion) {
     throw new Error(`unsupported manifest version: ${manifest.manifestVersion ?? "none"}`);
   }
-  if (manifest.figureSetVersion !== figureSet.figureSetVersion) {
+  const legacyMigration = legacyMigrationCandidate(manifest, figureSet);
+  if (legacyMigration && !allowLegacyMigration) {
+    throw new Error("legacy manifest requires explicit figure-set migration");
+  }
+  if (manifest.figureSetVersion !== figureSet.figureSetVersion && !legacyMigration) {
     throw new Error(
       `figure-set mismatch: expected ${figureSet.figureSetVersion}, received ${manifest.figureSetVersion ?? "none"}`,
     );
@@ -88,7 +107,7 @@ export function normalizeImportedManifest(manifest, figureSet) {
   const printWidths = {};
   for (const current of figureSet.figures) {
     const imported = importedFigures.get(current.id);
-    verifyPublicationIdentity(imported, current);
+    verifyPublicationIdentity(imported, current, legacyMigration && allowLegacyMigration);
     figures[current.id] = {
       decision: normalizeDecision(imported.decision),
       comments: Array.isArray(imported.comments)
@@ -113,6 +132,7 @@ export function normalizeImportedManifest(manifest, figureSet) {
     figures,
     claims,
     printWidths,
+    migratedFromVersion: legacyMigration ? manifest.figureSetVersion : null,
   };
 }
 
