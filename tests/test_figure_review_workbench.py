@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
 import shutil
 import subprocess
 
 import pytest
 
-from thermodense.figure_review.__main__ import HOST, INDEX_HTML, WorkbenchHandler
+from thermodense.figure_review.__main__ import (
+    HOST,
+    INDEX_HTML,
+    WorkbenchHandler,
+    figure_assets_current,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -39,3 +45,28 @@ def test_server_is_localhost_only_and_strips_scoped_route() -> None:
     handler.path = "/figure-review/figures/figure.png?download=1"
     handler._strip_scoped_path()
     assert handler.path == "/figures/figure.png?download=1"
+
+
+def test_figure_asset_identity_detects_missing_and_stale_files(tmp_path: Path) -> None:
+    preview = tmp_path / "preview.png"
+    publication = tmp_path / "publication.pdf"
+    preview.write_bytes(b"preview")
+    publication.write_bytes(b"publication")
+    figure_set = {
+        "figures": [
+            {
+                "src": preview.name,
+                "sha256": hashlib.sha256(preview.read_bytes()).hexdigest(),
+                "publicationSrc": publication.name,
+                "publicationSha256": hashlib.sha256(
+                    publication.read_bytes()
+                ).hexdigest(),
+            }
+        ]
+    }
+
+    assert figure_assets_current(figure_set, tmp_path)
+    preview.write_bytes(b"stale")
+    assert not figure_assets_current(figure_set, tmp_path)
+    preview.unlink()
+    assert not figure_assets_current(figure_set, tmp_path)

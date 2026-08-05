@@ -40,10 +40,16 @@ function normalizeComment(comment, figureId) {
 }
 
 function verifyPublicationIdentity(imported, current) {
-  if (imported.contentSha256 && imported.contentSha256 !== current.sha256) {
+  if (imported.contentSha256 !== current.sha256) {
     throw new Error(`preview identity mismatch for ${current.id}`);
   }
-  if (!imported.publication) return;
+  if (!current.publicationSrc && imported.publication) {
+    throw new Error(`unexpected publication identity for ${current.id}`);
+  }
+  if (!current.publicationSrc) return;
+  if (!imported.publication) {
+    throw new Error(`publication identity missing for ${current.id}`);
+  }
   if (
     imported.publication.path !== current.publicationSrc ||
     imported.publication.sha256 !== current.publicationSha256 ||
@@ -59,7 +65,7 @@ export function normalizeImportedManifest(manifest, figureSet) {
   }
   const supportedVersion =
     manifest.manifestVersion === MANIFEST_VERSION ||
-    /^0\.[1-4]-prototype$/.test(manifest.manifestVersion ?? "");
+    /^0\.[2-4]-prototype$/.test(manifest.manifestVersion ?? "");
   if (!supportedVersion) {
     throw new Error(`unsupported manifest version: ${manifest.manifestVersion ?? "none"}`);
   }
@@ -70,10 +76,18 @@ export function normalizeImportedManifest(manifest, figureSet) {
   }
 
   const importedFigures = new Map(manifest.figures.map((figure) => [figure.id, figure]));
+  const currentIds = new Set(figureSet.figures.map((figure) => figure.id));
+  if (
+    importedFigures.size !== figureSet.figures.length ||
+    manifest.figures.length !== figureSet.figures.length ||
+    [...importedFigures.keys()].some((id) => !currentIds.has(id))
+  ) {
+    throw new Error("manifest must contain every current figure exactly once");
+  }
   const figures = {};
   const printWidths = {};
   for (const current of figureSet.figures) {
-    const imported = importedFigures.get(current.id) ?? {};
+    const imported = importedFigures.get(current.id);
     verifyPublicationIdentity(imported, current);
     figures[current.id] = {
       decision: normalizeDecision(imported.decision),

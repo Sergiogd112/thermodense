@@ -12,6 +12,7 @@ Regenerate the sample figures first if figures/ is empty:
 from __future__ import annotations
 
 import functools
+import hashlib
 import http.server
 import json
 import os
@@ -91,23 +92,44 @@ class WorkbenchHandler(http.server.SimpleHTTPRequestHandler):
             super().do_HEAD()
 
 
+def figure_assets_current(figure_set: object, root: Path) -> bool:
+    """Return whether every declared figure exists with its declared identity."""
+    try:
+        identities = [
+            (root / relative, expected)
+            for figure in figure_set["figures"]  # type: ignore[index]
+            for relative, expected in (
+                (figure["src"], figure["sha256"]),
+                (figure["publicationSrc"], figure["publicationSha256"]),
+            )
+        ]
+    except (KeyError, TypeError):
+        return False
+    return bool(identities) and all(
+        path.is_file() and hashlib.sha256(path.read_bytes()).hexdigest() == expected
+        for path, expected in identities
+    )
+
+
 def ensure_figure_assets() -> None:
-    """Regenerate ignored browser/publication artifacts when absent."""
+    """Regenerate ignored browser/publication artifacts when absent or stale."""
     data_path = HERE / "data.json"
     try:
         figure_set = json.loads(data_path.read_text())
-        paths = [
-            HERE / relative
-            for figure in figure_set["figures"]
-            for relative in (figure["src"], figure["publicationSrc"])
-        ]
-    except (FileNotFoundError, KeyError, TypeError, json.JSONDecodeError):
-        paths = []
-    if paths and all(path.exists() for path in paths):
+    except (FileNotFoundError, TypeError, json.JSONDecodeError):
+        figure_set = None
+    if figure_assets_current(figure_set, HERE):
         return
     from thermodense.figure_review import make_figures
 
+    if not make_figures.RESULTS.is_dir():
+        raise RuntimeError(
+            "Figure generation requires a Thermodense source checkout with committed benchmark results"
+        )
     make_figures.main()
+    regenerated = json.loads(data_path.read_text())
+    if not figure_assets_current(regenerated, HERE):
+        raise RuntimeError("Figure generation completed without matching declared artifacts")
 
 
 def main() -> None:

@@ -6,6 +6,10 @@ sets. Each figure is in exactly one decision column: `unreviewed`, `include`,
 
 ## Run
 
+Run from a Thermodense source checkout containing the committed benchmark
+results used by the figure generator; the workbench is not an installed-wheel
+entry point.
+
 ```sh
 uv run python -m thermodense.figure_review
 ```

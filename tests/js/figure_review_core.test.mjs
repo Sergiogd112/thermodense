@@ -85,6 +85,37 @@ test("incompatible figure sets and artifact identities are rejected", () => {
     }, figureSet),
     /unsupported manifest version/,
   );
+  assert.throws(
+    () => normalizeImportedManifest({
+      manifestVersion: "1.0",
+      figureSetVersion: "set-v1",
+      figures: [],
+    }, figureSet),
+    /every current figure exactly once/,
+  );
+  assert.throws(
+    () => normalizeImportedManifest({
+      manifestVersion: "1.0",
+      figureSetVersion: "set-v1",
+      figures: [{
+        id: "fig-1",
+        publication: {
+          path: "figures/figure.pdf",
+          sha256: "publication",
+          format: "application/pdf",
+        },
+      }],
+    }, figureSet),
+    /preview identity mismatch/,
+  );
+  assert.throws(
+    () => normalizeImportedManifest({
+      manifestVersion: "1.0",
+      figureSetVersion: "set-v1",
+      figures: [{ id: "fig-1", contentSha256: "preview" }],
+    }, figureSet),
+    /publication identity missing/,
+  );
 });
 
 test("draft keys, physical sizing, and route-safe assets are deterministic", () => {
