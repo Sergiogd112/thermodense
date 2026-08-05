@@ -31,6 +31,7 @@ dependencies = [
 
 [project.scripts]
 thermodense = "thermodense.cli:main"
+thermodense-figure-review = "thermodense.figure_review.__main__:main"
 
 [build-system]
 requires = ["setuptools>=77"]
@@ -38,6 +39,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"thermodense.figure_review" = ["*.css", "*.js", "*.mjs", "*.json"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
