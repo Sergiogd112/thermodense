@@ -1,0 +1,171 @@
+{
+ "schemaVersion": "1.0",
+ "figureSetVersion": "real-1-local-v3",
+ "figures": [
+  {
+   "id": "fig-01",
+   "title": "Primary PCMCI+ graph and structural-control retention",
+   "src": "figures/figure-01-graph.png",
+   "sha256": "030d37855b7be22309a70661109b785ba8b6b5a50b30d4edee77a2807d511c29",
+   "publicationSrc": "figures/figure-01-graph.pdf",
+   "publicationSha256": "966e0e692afc4dc005d9df1a13809e8f93d509e0a6d31008db4f0111829bdda6",
+   "publicationFormat": "application/pdf",
+   "printWidthCm": 8.5,
+   "caption": "Sample review figure generated from the committed real ParCorr results renderer. (a) primary 42-link graph; (b) links retained under the IAAFT structural control; (c) links retained under the circular-shift control. Dashed grey contemporaneous edges are labelled with the partial correlation; arrows are lagged cross links with lag \u03c4.",
+   "panels": [
+    {
+     "id": "a",
+     "label": "Primary ParCorr graph"
+    },
+    {
+     "id": "b",
+     "label": "IAAFT control retention"
+    },
+    {
+     "id": "c",
+     "label": "Circular-shift control retention"
+    }
+   ],
+   "claimCardIds": [
+    "claim-01",
+    "claim-02"
+   ],
+   "provenance": {
+    "sourceArtifacts": [
+     {
+      "name": "results-parcorr.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr.jsonl",
+      "sha256": "ef515984144981bb160194ef2b5470aa85271607d94c3534acaeec83976b367b"
+     },
+     {
+      "name": "results-parcorr-controls-iaaft.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr-controls-iaaft.jsonl",
+      "sha256": "47a1000c717c3ed705546c927bdeedb385566d2042748b0ec47675a4bfc08970"
+     },
+     {
+      "name": "results-parcorr-controls-shift.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr-controls-shift.jsonl",
+      "sha256": "32724c311cacc2f781385368e6d5af93b6c5dbbee9cf8a4c8b157d84c6692be7"
+     }
+    ],
+    "renderer": "thermodense.figure_review.make_figures",
+    "advisory": "Review rendering; scientific approval remains a human decision."
+   }
+  },
+  {
+   "id": "fig-02",
+   "title": "Physical-link retention and spurious control\u2192physical links",
+   "src": "figures/figure-02-retention.png",
+   "sha256": "c0c5f6924e613faa65a548e69f648910f105a545648886c26161a4c4fb4b9fea",
+   "publicationSrc": "figures/figure-02-retention.pdf",
+   "publicationSha256": "91fd839efa874d6cc8de0d0f71321642f9403607e7945e5cc2fb9770cfab25d6",
+   "publicationFormat": "application/pdf",
+   "printWidthCm": 8.5,
+   "caption": "(a) physical links retained vs added under each structural-control family; (b) spurious control\u2192physical links with median and max |r|.",
+   "panels": [
+    {
+     "id": "a",
+     "label": "Retention by family"
+    },
+    {
+     "id": "b",
+     "label": "Spurious cross links"
+    }
+   ],
+   "claimCardIds": [
+    "claim-01",
+    "claim-02"
+   ],
+   "provenance": {
+    "sourceArtifacts": [
+     {
+      "name": "results-parcorr-controls-iaaft.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr-controls-iaaft.jsonl",
+      "sha256": "47a1000c717c3ed705546c927bdeedb385566d2042748b0ec47675a4bfc08970"
+     },
+     {
+      "name": "results-parcorr-controls-shift.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr-controls-shift.jsonl",
+      "sha256": "32724c311cacc2f781385368e6d5af93b6c5dbbee9cf8a4c8b157d84c6692be7"
+     },
+     {
+      "name": "results-parcorr-controls.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr-controls.jsonl",
+      "sha256": "073b648213c3f98432ef0a37ad3d2419b5f0432d5201eda092a2491d9481c73f"
+     }
+    ],
+    "renderer": "thermodense.figure_review.make_figures",
+    "advisory": "Review rendering; scientific approval remains a human decision."
+   }
+  },
+  {
+   "id": "fig-03",
+   "title": "White-noise and periodic surrogate evidence",
+   "src": "figures/figure-03-surrogates.png",
+   "sha256": "8eab6f63b6946c35a62e4e68ed85826fbb98e07726e0aaa1bff50353942392b1",
+   "publicationSrc": "figures/figure-03-surrogates.pdf",
+   "publicationSha256": "d42c2e049234195a5141f0f822c6c6abf40245791a3bb7a878aeed38d927260c",
+   "publicationFormat": "application/pdf",
+   "printWidthCm": 8.5,
+   "caption": "(a) relation types in the combined white-noise/periodic surrogate run (log scale, dashed line = 42 primary links); (b) surrogate links by family and the physical-subgraph link count of the surrogate run.",
+   "panels": [
+    {
+     "id": "a",
+     "label": "Surrogate relation types"
+    },
+    {
+     "id": "b",
+     "label": "Surrogate links by family"
+    }
+   ],
+   "claimCardIds": [],
+   "provenance": {
+    "sourceArtifacts": [
+     {
+      "name": "results-parcorr-surrogates.jsonl",
+      "path": "benchmarks/pcmci-methods/results/real-1/local/results-parcorr-surrogates.jsonl",
+      "sha256": "78e22b0d18f1c6eb6646b43ba5287355f471bef630b43ae6a4b217ccd4cec7ff"
+     }
+    ],
+    "renderer": "thermodense.figure_review.make_figures",
+    "advisory": "Review rendering; scientific approval remains a human decision."
+   }
+  }
+ ],
+ "claims": [
+  {
+   "id": "claim-01",
+   "text": "Canonical Ap\u2013density links (contemporaneous Ap\u2194\u03c1\u2083\u2082\u2085, Ap\u2194\u03c1\u2088\u2082\u2085; lagged Ap\u2192\u03c1\u2083\u2082\u2085 at 53 d) are retained under family-separated structural controls (IAAFT, circular shift).",
+   "evidenceFigureIds": [
+    "fig-01",
+    "fig-02"
+   ]
+  },
+  {
+   "id": "claim-02",
+   "text": "Spurious control\u2192physical links are few (7 IAAFT, 4 shift) and weak (median |r| \u2248 0.04) relative to the canonical links.",
+   "evidenceFigureIds": [
+    "fig-02"
+   ]
+  }
+ ],
+ "profiles": {
+  "agu-wiley": {
+   "name": "AGU / Wiley",
+   "warnings": [
+    "No introduce / remove / move / obscure of image content",
+    "Data and software availability statement required",
+    "Preferred 300 dpi for line art"
+   ]
+  },
+  "copernicus": {
+   "name": "Copernicus",
+   "warnings": [
+    "Minimum figure width 8 cm",
+    "300 dpi resolution",
+    "Fonts embedded in figure files",
+    "Captions in the text, not inside figure files"
+   ]
+  }
+ }
+}

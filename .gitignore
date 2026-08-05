@@ -4,6 +4,9 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .venv/
+node_modules/
+/tests/js/playwright-report/
+/tests/js/test-results/
 /.build/
 /build/
 /dist/
@@ -20,6 +23,7 @@ __pycache__/
 *.log
 *.pid
 *.pdf
+/src/thermodense/figure_review/figures/
 *.aux
 *.bbl
 *.bcf

@@ -1,0 +1,16 @@
+[Unit]
+Description=Thermodense figure-review workbench
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/Github/thermodense
+Environment=PYTHONUNBUFFERED=1
+Environment=THERMODENSE_FIGURE_REVIEW_NO_OPEN=1
+ExecStart=%h/Github/thermodense/.venv/bin/python -m thermodense.figure_review
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
