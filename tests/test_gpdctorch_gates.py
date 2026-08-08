@@ -234,6 +234,7 @@ def test_legacy_import_attests_environment_without_claiming_hardware_equality(
         "environment_label": "gpu-env",
         "environment_fingerprint": "fingerprint",
         "git_commit": "evidence",
+        "settings": {},
     }
     evidence = tmp_path / "evidence.jsonl"
     evidence.write_text(json.dumps(row) + "\n")
@@ -258,6 +259,9 @@ def test_legacy_import_attests_environment_without_claiming_hardware_equality(
         "original_git_commit": "evidence",
         "tigramite_pin": "pin",
         "pin_proven": True,
+        "legacy_settings": {},
+        "current_requested_settings": {"threads": 1},
+        "threads_provenance": "legacy_absent_constrained_to_default_1",
         "current_hardware": HARDWARE,
         "current_environment": environment,
     }

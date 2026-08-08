@@ -615,6 +615,8 @@ def _legacy_evidence(tmp_path: Path, monkeypatch) -> dict[str, object]:
     }
     for key in ("hardware", "gpdctorch_lifecycle", "gate_stage"):
         row.pop(key, None)
+    row["settings"] = row["settings"].copy()
+    row["settings"].pop("threads")
     row.update(
         host_label="legacy-host",
         environment_label="legacy-rtx2060",
@@ -645,13 +647,23 @@ def test_real_validator_imports_legacy_capability_and_runs_tau10_stages(
     )
     capability = state["stages"]["capability"]
     assert capability["result"] == row
-    assert capability["capability_evidence"]["mode"] == "legacy_environment_attestation"
+    attestation = capability["capability_evidence"]
+    assert attestation["mode"] == "legacy_environment_attestation"
+    assert attestation["legacy_settings"] == row["settings"]
+    assert attestation["current_requested_settings"] == row["settings"] | {"threads": 1}
+    assert attestation["threads_provenance"] == "legacy_absent_constrained_to_default_1"
     assert "hardware" not in capability["result"]
     assert "capability_evidence" not in capability["result"]
 
 
 @pytest.mark.parametrize(
-    "field,value", [("pin_proven", False), ("original_git_commit", "tampered")]
+    "field,value",
+    [
+        ("pin_proven", False),
+        ("original_git_commit", "tampered"),
+        ("current_requested_settings", {"threads": 2}),
+        ("threads_provenance", "tampered"),
+    ],
 )
 def test_legacy_import_re_attestation_blocks_tampered_resume(
     tmp_path: Path, monkeypatch, field: str, value: object
@@ -672,3 +684,18 @@ def test_legacy_import_re_attestation_blocks_tampered_resume(
     state_path.write_text(json.dumps(state))
     args.import_capability = None
     assert pcmci_real.run_gpdctorch_gated(args) == 1
+
+
+def test_legacy_import_rejects_missing_threads_for_multithread_request(
+    tmp_path: Path, monkeypatch
+) -> None:
+    row = _legacy_evidence(tmp_path, monkeypatch)
+    evidence = tmp_path / "legacy.jsonl"
+    evidence.write_text(json.dumps(row) + "\n")
+    monkeypatch.setattr(gpdctorch_gates, "_legacy_tigramite_pin", lambda *_args: True)
+    args = _args(tmp_path)
+    args.import_capability = evidence
+    args.threads = 2
+
+    with pytest.raises(gpdctorch_gates.GateError, match="legacy capability settings"):
+        pcmci_real.run_gpdctorch_gated(args)
