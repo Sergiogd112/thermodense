@@ -13,6 +13,7 @@ import hashlib
 import json
 from pathlib import Path
 import random
+import re
 import resource
 import shutil
 import sys
@@ -63,6 +64,10 @@ class SensitivityCase:
     role: str
 
 
+class MatrixSynthesisError(ValueError):
+    """The four required ParCorr sensitivity artifacts cannot be compared."""
+
+
 REGISTERED_SENSITIVITY_CASES = (
     SensitivityCase(RAW_OBSERVED_DAILY, DETRENDED_ANOMALY, "primary"),
     SensitivityCase(RAW_OBSERVED_DAILY, SEASONAL_ANOMALY, "robustness"),
@@ -87,6 +92,371 @@ def sensitivity_case(
 def expand_sensitivity_cases() -> tuple[SensitivityCase, ...]:
     """Return the complete preregistered 2×2 PCMCI sensitivity matrix."""
     return REGISTERED_SENSITIVITY_CASES
+
+
+def _case_key(case: SensitivityCase) -> str:
+    return f"{case.timing_variant}/{case.preprocessing_profile}"
+
+
+def _physical_node(node_name: str) -> str:
+    """Normalize the two F10.7 labels wherever a physical node is compared."""
+    return "f10_7" if node_name in {F107_RAW_COLUMN, NODE_COLUMNS[0]} else node_name
+
+
+def _expected_node_order(case: SensitivityCase) -> list[str]:
+    return [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == RAW_OBSERVED_DAILY else NODE_COLUMNS
+
+
+def _is_sha256(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+
+
+def _normalized_f107_identity(value: Any) -> Any:
+    if isinstance(value, str):
+        return _physical_node(value)
+    if isinstance(value, list):
+        return [_normalized_f107_identity(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalized_f107_identity(item) for key, item in value.items()}
+    return value
+
+
+def _signed_directed_links(row: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Verify and read only fully directed PCMCI links from one canonical artifact."""
+    artifact = row.get("artifact")
+    case = row.get("sensitivity_case")
+    if not isinstance(artifact, dict) or not isinstance(case, dict):
+        raise MatrixSynthesisError("malformed matrix row artifact or provenance")
+    path = artifact.get("path")
+    expected_hash = artifact.get("sha256")
+    if not isinstance(path, str) or not isinstance(expected_hash, str):
+        raise MatrixSynthesisError("malformed matrix artifact reference")
+    artifact_path = Path(path)
+    try:
+        if hashlib.sha256(artifact_path.read_bytes()).hexdigest() != expected_hash:
+            raise MatrixSynthesisError("matrix artifact sha256 does not match provenance")
+        with np.load(artifact_path, allow_pickle=False) as saved:
+            required = {"graph", "p_matrix", "val_matrix", "node_names"}
+            if set(saved.files) != required:
+                raise MatrixSynthesisError("matrix artifact canonical keys are invalid")
+            graph, p_matrix, val_matrix = (saved[name] for name in ("graph", "p_matrix", "val_matrix"))
+            node_names = [str(name) for name in saved["node_names"].tolist()]
+    except (OSError, ValueError) as error:
+        if isinstance(error, MatrixSynthesisError):
+            raise
+        raise MatrixSynthesisError(f"malformed matrix artifact: {error}") from error
+    if not all(matrix.ndim == 3 for matrix in (graph, p_matrix, val_matrix)):
+        raise MatrixSynthesisError("matrix artifacts must be three-dimensional")
+    expected_shape = (len(node_names), len(node_names), DEFAULT_TAU_MAX + 1)
+    if any(matrix.shape != expected_shape for matrix in (graph, p_matrix, val_matrix)):
+        raise MatrixSynthesisError("matrix artifact shape does not match the 0-180 lag window")
+    if node_names != case.get("node_order"):
+        raise MatrixSynthesisError("artifact node axis does not match result provenance")
+    links: dict[tuple[str, str, int, int], dict[str, Any]] = {}
+    diagnostics = {"partially_oriented_count": 0, "conflict_count": 0}
+    for source_index, target_index, lag in np.ndindex(graph.shape):
+        mark = str(graph[source_index, target_index, lag])
+        if mark == "-->":
+            source, target = source_index, target_index
+        elif mark == "<--":
+            source, target = target_index, source_index
+        else:
+            if mark in {"o->", "<-o"}:
+                diagnostics["partially_oriented_count"] += 1
+            elif mark == "x-x":
+                diagnostics["conflict_count"] += 1
+            continue
+        value = float(val_matrix[source_index, target_index, lag])
+        p_value = float(p_matrix[source_index, target_index, lag])
+        if not np.isfinite(value) or not np.isfinite(p_value):
+            raise MatrixSynthesisError("directed matrix evidence must be finite")
+        if not 0.0 <= p_value <= 1.0:
+            raise MatrixSynthesisError("directed matrix p-value must be in [0, 1]")
+        sign = int(np.sign(value))
+        if sign == 0:
+            raise MatrixSynthesisError("directed matrix value must have a nonzero sign")
+        link = {
+            "source": node_names[source],
+            "target": node_names[target],
+            "lag": int(lag),
+            "sign": sign,
+            "value": value,
+            "p_value": p_value,
+            "graph_mark": mark,
+        }
+        links.setdefault((link["source"], link["target"], link["lag"], sign), link)
+    return (
+        sorted(links.values(), key=lambda link: (link["source"], link["target"], link["lag"], link["sign"])),
+        diagnostics,
+    )
+
+
+def _matrix_rows_by_case(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    if not isinstance(rows, list):
+        raise MatrixSynthesisError("malformed matrix rows")
+    expected = {_case_key(case): case for case in REGISTERED_SENSITIVITY_CASES}
+    by_case: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            raise MatrixSynthesisError("malformed matrix row")
+        case_data = row.get("sensitivity_case", {})
+        if not isinstance(case_data, dict):
+            raise MatrixSynthesisError("malformed matrix row provenance")
+        if row.get("schema_version") != SCHEMA_VERSION:
+            raise MatrixSynthesisError("matrix row schema version mismatch")
+        if row.get("runner_version") != RUNNER_VERSION:
+            raise MatrixSynthesisError("matrix row runner version mismatch")
+        if row.get("synthetic") is not False:
+            raise MatrixSynthesisError("matrix row synthetic marker mismatch")
+        key = f"{case_data.get('timing_variant')}/{case_data.get('preprocessing_profile')}"
+        if (
+            key not in expected
+            or key in by_case
+            or case_data.get("role") != expected[key].role
+        ):
+            raise MatrixSynthesisError("incomplete or duplicate registered sensitivity case")
+        by_case[key] = row
+    if set(by_case) != set(expected):
+        raise MatrixSynthesisError("incomplete four-cell ParCorr sensitivity matrix")
+    return by_case
+
+
+def synthesize_parcorr_matrix(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Classify a complete production ParCorr matrix from its canonical artifacts."""
+    by_case = _matrix_rows_by_case(rows)
+    ordered = [by_case[_case_key(case)] for case in REGISTERED_SENSITIVITY_CASES]
+    if any(row.get("status") != "succeeded" for row in ordered):
+        raise MatrixSynthesisError("incomplete matrix: one or more cells failed")
+    if any(row.get("method") != "parcorr" for row in ordered):
+        raise MatrixSynthesisError("matrix method must be ParCorr")
+    if any(row.get("tau_max") != DEFAULT_TAU_MAX for row in ordered):
+        raise MatrixSynthesisError("matrix tau_max must be the physical 0-180 day window")
+    reference = ordered[0]
+    for name, message in (
+        ("settings", "matrix settings mismatch"),
+        ("algorithm", "matrix graph/inference settings mismatch"),
+        ("missing_data_policy", "matrix missing-data settings mismatch"),
+    ):
+        if any(row.get(name) != reference.get(name) for row in ordered[1:]):
+            raise MatrixSynthesisError(message)
+    reference_assumptions = _normalized_f107_identity(reference.get("link_assumptions"))
+    if any(
+        _normalized_f107_identity(row.get("link_assumptions")) != reference_assumptions
+        for row in ordered[1:]
+    ):
+        raise MatrixSynthesisError("matrix link-assumption settings mismatch")
+    try:
+        identity = reference["sensitivity_case"]["accepted_quality_rows"]
+        date_hash = identity["daily_date_sequence_sha256"]
+        support_hash = identity["common_f107_support"]["sha256"]
+    except (KeyError, TypeError) as error:
+        raise MatrixSynthesisError("malformed accepted-quality-row provenance") from error
+    if any(
+        row["sensitivity_case"].get("accepted_quality_rows") != identity
+        for row in ordered[1:]
+    ):
+        raise MatrixSynthesisError("matrix accepted-quality-row identity mismatch")
+    if (
+        not isinstance(identity.get("row_count"), int)
+        or isinstance(identity["row_count"], bool)
+        or identity["row_count"] <= 0
+        or not _is_sha256(date_hash)
+        or not _is_sha256(support_hash)
+        or not isinstance(identity["common_f107_support"].get("row_count"), int)
+        or isinstance(identity["common_f107_support"]["row_count"], bool)
+        or not 0 <= identity["common_f107_support"]["row_count"] <= identity["row_count"]
+    ):
+        raise MatrixSynthesisError("malformed accepted-quality-row provenance")
+    normalized_node_order: list[str] | None = None
+    for case, row in zip(REGISTERED_SENSITIVITY_CASES, ordered, strict=True):
+        case_data = row["sensitivity_case"]
+        node_order = case_data.get("node_order")
+        qualification = row.get("stationarity_qualification")
+        expected_node_order = _expected_node_order(case)
+        if node_order != expected_node_order or not isinstance(qualification, dict):
+            raise MatrixSynthesisError("malformed stationarity provenance")
+        expected_algorithm = {
+            "name": "PCMCI+",
+            "entry_point": "PCMCI.run_pcmciplus",
+            "tau_min": 0,
+            "pc_alpha": 0.05,
+            "contemp_collider_rule": "majority",
+            "conflict_resolution": True,
+            "fdr_method": "none",
+        }
+        expected_missing_policy = {
+            "sentinel": MISSING_FLAG,
+            "remove_missing_upto_maxlag": False,
+            "drivers_interpolated": False,
+            "rows_dropped": False,
+        }
+        settings = row.get("settings")
+        if (
+            row.get("algorithm") != expected_algorithm
+            or row.get("missing_data_policy") != expected_missing_policy
+            or row.get("link_assumptions") != _link_assumption_metadata(DEFAULT_TAU_MAX, expected_node_order)
+            or not isinstance(settings, dict)
+            or settings.get("significance") != "analytic"
+            or settings.get("pc_alpha") != 0.05
+            or not isinstance(settings.get("threads"), int)
+            or isinstance(settings["threads"], bool)
+            or settings["threads"] <= 0
+        ):
+            raise MatrixSynthesisError("matrix production settings provenance mismatch")
+        expected_stationarity_identity = {
+            "timing_variant": case.timing_variant,
+            "preprocessing_profile": case.preprocessing_profile,
+            "node_order": node_order,
+            "daily_date_sequence_sha256": date_hash,
+            "common_f107_support_sha256": support_hash,
+        }
+        if qualification.get("provenance_identity") != expected_stationarity_identity:
+            raise MatrixSynthesisError("stationarity provenance identity mismatch")
+        qualification_eligible = qualification.get("causal_interpretation_eligible")
+        qualification_evidence_only = qualification.get("sensitivity_evidence_only")
+        row_eligible = row.get("causal_interpretation_eligible")
+        row_evidence_only = row.get("sensitivity_evidence_only")
+        if not all(
+            isinstance(value, bool)
+            for value in (
+                qualification_eligible,
+                qualification_evidence_only,
+                row_eligible,
+                row_evidence_only,
+            )
+        ):
+            raise MatrixSynthesisError("malformed stationarity eligibility flags")
+        if (
+            row_eligible != qualification_eligible
+            or row_evidence_only != qualification_evidence_only
+            or qualification_evidence_only != (not qualification_eligible)
+        ):
+            raise MatrixSynthesisError("stationarity eligibility disagrees with row provenance")
+        normalized = [_physical_node(node) for node in node_order]
+        if normalized_node_order is None:
+            normalized_node_order = normalized
+        elif normalized != normalized_node_order:
+            raise MatrixSynthesisError("matrix normalized node order mismatch")
+
+    try:
+        artifact_data = {
+            _case_key(case): _signed_directed_links(by_case[_case_key(case)])
+            for case in REGISTERED_SENSITIVITY_CASES
+        }
+    except MatrixSynthesisError:
+        raise
+    extracted = {key: value[0] for key, value in artifact_data.items()}
+    diagnostics = {key: value[1] for key, value in artifact_data.items()}
+    primary_key, detrending_key, timing_key, interaction_key = (
+        _case_key(case) for case in REGISTERED_SENSITIVITY_CASES
+    )
+    primary_links: list[dict[str, Any]] = []
+    for primary in extracted[primary_key]:
+        detrending_matches = [
+            link for link in extracted[detrending_key]
+            if (link["source"], link["target"], link["lag"], link["sign"])
+            == (primary["source"], primary["target"], primary["lag"], primary["sign"])
+        ]
+        centered_matches = [
+            link for link in extracted[timing_key]
+            if (_physical_node(link["source"]), _physical_node(link["target"]), link["sign"])
+            == (_physical_node(primary["source"]), _physical_node(primary["target"]), primary["sign"])
+        ]
+        failed_dimensions = [
+            name for name, matches in (("detrending", detrending_matches), ("timing", centered_matches))
+            if not matches
+        ]
+        failed_stationarity_cells = (
+            [
+                key
+                for key in (primary_key, detrending_key, timing_key)
+                if not by_case[key]["stationarity_qualification"][
+                    "causal_interpretation_eligible"
+                ]
+            ]
+            if not failed_dimensions
+            else []
+        )
+        primary_links.append({
+            **{name: primary[name] for name in ("source", "target", "lag", "sign")},
+            "classification": (
+                "factor_sensitive"
+                if failed_dimensions
+                else "stationarity_limited"
+                if failed_stationarity_cells
+                else "main_text_robust"
+            ),
+            "failed_dimensions": failed_dimensions,
+            "failed_stationarity_cells": failed_stationarity_cells,
+            "centered_matches": [
+                {name: match[name] for name in ("source", "target", "lag", "sign", "value", "p_value")}
+                for match in centered_matches
+            ],
+            "centered_delay_equivalent": False,
+            "evidence": {
+                "primary": primary,
+                "detrending": detrending_matches,
+                "timing": centered_matches,
+            },
+        })
+    primary_identities = {
+        (link["source"], link["target"], link["lag"], link["sign"])
+        for link in extracted[primary_key]
+    }
+    consumed = {detrending_key: set(), timing_key: set()}
+    for primary in primary_links:
+        for dimension, key in (("detrending", detrending_key), ("timing", timing_key)):
+            for link in primary["evidence"][dimension]:
+                consumed[key].add((link["source"], link["target"], link["lag"], link["sign"]))
+    exploratory: dict[tuple[str, str, int, int], dict[str, Any]] = {}
+    for key in (detrending_key, timing_key, interaction_key):
+        for link in extracted[key]:
+            identity_key = (link["source"], link["target"], link["lag"], link["sign"])
+            timing_related_primary = any(
+                (_physical_node(link["source"]), _physical_node(link["target"]), link["sign"])
+                == (_physical_node(primary["source"]), _physical_node(primary["target"]), primary["sign"])
+                for primary in extracted[primary_key]
+            )
+            if identity_key in primary_identities or identity_key in consumed.get(key, set()) or (
+                key == interaction_key and timing_related_primary
+            ):
+                continue
+            item = exploratory.setdefault(
+                identity_key,
+                {name: link[name] for name in ("source", "target", "lag", "sign")}
+                | {"source_cells": [], "evidence": []},
+            )
+            item["source_cells"].append(key)
+            item["evidence"].append({"case": key, **link})
+    return {
+        "schema_version": "1",
+        "implementation_version": RUNNER_VERSION,
+        "state": "complete",
+        "method": "parcorr",
+        "physical_lag_window_days": {"min": 0, "max": DEFAULT_TAU_MAX},
+        "accepted_quality_rows": identity,
+        "settings": reference["settings"],
+        "algorithm": reference["algorithm"],
+        "stationarity_eligibility": {
+            key: by_case[key].get("stationarity_qualification") for key in by_case
+        },
+        "case_artifacts": [
+            {
+                "case": _case_key(case),
+                **{
+                    name: by_case[_case_key(case)]["artifact"][name]
+                    for name in ("name", "path", "sha256")
+                    if name in by_case[_case_key(case)]["artifact"]
+                },
+                "result_digest": by_case[_case_key(case)].get("result_digest"),
+            }
+            for case in REGISTERED_SENSITIVITY_CASES
+        ],
+        "primary_links": primary_links,
+        "exploratory_links": sorted(exploratory.values(), key=lambda link: (link["source"], link["target"], link["lag"], link["sign"])),
+        "interaction_diagnostic_links": extracted[interaction_key],
+        "orientation_diagnostics": diagnostics,
+    }
 
 
 @dataclass(frozen=True)
@@ -846,55 +1216,135 @@ def _base_row(
     }
 
 
+def _write_incomplete_matrix_manifest(
+    path: Path,
+    error: MatrixSynthesisError,
+    current_case: SensitivityCase | None,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Persist the controlled production-matrix failure state before raising."""
+    completed = [
+        {
+            "case": f"{row.get('sensitivity_case', {}).get('timing_variant')}/"
+            f"{row.get('sensitivity_case', {}).get('preprocessing_profile')}",
+            "status": row.get("status"),
+            "failure_reason": row.get("failure_reason"),
+            "artifact": row.get("artifact"),
+        }
+        for row in rows
+    ]
+    if current_case is not None and _case_key(current_case) not in {
+        item["case"] for item in completed
+    }:
+        completed.append(
+            {
+                "case": _case_key(current_case),
+                "status": "failed",
+                "failure_reason": str(error),
+                "artifact": None,
+            }
+        )
+    runtime.write_jsonl_artifact(
+        path,
+        [
+            {
+                "state": "incomplete",
+                "error": str(error),
+                "current_case": _case_key(current_case) if current_case else None,
+                "completed_cells": completed,
+            }
+        ],
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     artifact_directory = args.output.parent / f"{args.output.stem}_artifacts"
+    agreement_path = artifact_directory / "parcorr-sensitivity-agreement.jsonl"
+    production_matrix = args.production_sensitivity_matrix
+    if production_matrix:
+        if args.methods not in (None, ["parcorr"]):
+            raise ValueError("production sensitivity matrix requires only ParCorr")
+        if args.tau_max != DEFAULT_TAU_MAX:
+            raise ValueError("production sensitivity matrix requires physical lags 0-180 days")
+        if args.row_limit is not None:
+            raise ValueError("production sensitivity matrix does not accept --row-limit")
     if (args.output.exists() or artifact_directory.exists()) and not args.overwrite:
         raise ValueError(
             f"Refusing to overwrite existing result or artifacts: {args.output}; use --overwrite."
         )
-    input_data = load_input(args.input, args.row_limit)
-    if input_data.raw_f107 is None:
-        raise ValueError("input CSV is missing raw observed daily F10.7")
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    if production_matrix and args.overwrite:
+        args.output.write_text("")
+        shutil.rmtree(artifact_directory, ignore_errors=True)
+    try:
+        input_data = load_input(args.input, args.row_limit)
+        if input_data.raw_f107 is None:
+            raise ValueError("input CSV is missing raw observed daily F10.7")
+    except Exception as error:
+        if not production_matrix:
+            raise
+        controlled = MatrixSynthesisError(f"incomplete matrix: {type(error).__name__}: {error}")
+        _write_incomplete_matrix_manifest(agreement_path, controlled, None, [])
+        raise controlled from error
     cases = (
         expand_sensitivity_cases()
-        if args.all_sensitivity_cases
+        if args.all_sensitivity_cases or production_matrix
         else (sensitivity_case(args.timing_variant, args.preprocessing_profile),)
     )
-    methods = args.methods or DEFAULT_METHODS
+    methods = ("parcorr",) if production_matrix else args.methods or DEFAULT_METHODS
     if args.all_sensitivity_cases and "gpdctorch" in methods:
         raise ValueError("GPDCtorch sensitivity-matrix execution is not available")
     for method in methods:
         for case in cases:
             if method == "gpdctorch":
                 _validate_gpdctorch_scope(method, args.tau_max, case, input_data)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    if args.overwrite:
+    if args.overwrite and not production_matrix:
         args.output.write_text("")
         shutil.rmtree(artifact_directory, ignore_errors=True)
     artifact_directory.mkdir(parents=True, exist_ok=True)
     threads = args.threads if args.threads is not None else 1
     summary: dict[str, int] = {}
-    for case in cases:
-        case_diagnostics = prepare_case_diagnostics(input_data, case, artifact_directory)
-        for method in methods:
-            print(
-                f"running {case.timing_variant}/{case.preprocessing_profile} {method}",
-                file=sys.stderr,
-                flush=True,
-            )
-            row = _base_row(args, method, case, threads, case_diagnostics)
-            row.update(
-                _run_isolated_case(
-                    args,
-                    method,
-                    case,
-                    threads,
-                    artifact_directory
-                    / f"{method}-{case.timing_variant}-{case.preprocessing_profile}.npz",
+    rows: list[dict[str, Any]] = []
+    current_case: SensitivityCase | None = None
+    try:
+        for case in cases:
+            current_case = case
+            case_diagnostics = prepare_case_diagnostics(input_data, case, artifact_directory)
+            for method in methods:
+                print(
+                    f"running {case.timing_variant}/{case.preprocessing_profile} {method}",
+                    file=sys.stderr,
+                    flush=True,
                 )
-            )
-            runtime.append_jsonl(args.output, row)
-            summary[row["status"]] = summary.get(row["status"], 0) + 1
+                row = _base_row(args, method, case, threads, case_diagnostics)
+                row.update(
+                    _run_isolated_case(
+                        args,
+                        method,
+                        case,
+                        threads,
+                        artifact_directory
+                        / f"{method}-{case.timing_variant}-{case.preprocessing_profile}.npz",
+                    )
+                )
+                runtime.append_jsonl(args.output, row)
+                rows.append(row)
+                summary[row["status"]] = summary.get(row["status"], 0) + 1
+        if production_matrix:
+            agreement = synthesize_parcorr_matrix(rows)
+            runtime.write_jsonl_artifact(agreement_path, [agreement])
+    except Exception as error:
+        if not production_matrix:
+            raise
+        controlled = (
+            error
+            if isinstance(error, MatrixSynthesisError)
+            else MatrixSynthesisError(f"incomplete matrix: {type(error).__name__}: {error}")
+        )
+        _write_incomplete_matrix_manifest(agreement_path, controlled, current_case, rows)
+        if isinstance(error, MatrixSynthesisError):
+            raise error
+        raise controlled from error
     print(f"{args.output} {json.dumps(summary, sort_keys=True)}")
     return 0
 
@@ -919,6 +1369,11 @@ def parser() -> argparse.ArgumentParser:
         default=DETRENDED_ANOMALY,
     )
     run_parser.add_argument("--all-sensitivity-cases", action="store_true")
+    run_parser.add_argument(
+        "--production-sensitivity-matrix",
+        action="store_true",
+        help="run exactly the four ParCorr 0-180-day sensitivity cells and synthesize agreement",
+    )
     run_parser.add_argument("--tau-max", type=int, default=DEFAULT_TAU_MAX)
     run_parser.add_argument(
         "--row-limit", type=int, help="calibration-only prefix row limit"
