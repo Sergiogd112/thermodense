@@ -2,7 +2,7 @@
 
 The five-node graph is: daily mean log10 HASDM density at 325 km and
 825 km (from the **Mauna Loa HASDM subset**), Mauna Loa tropospheric CO2,
-F10.7 (81-day centred solar proxy), and Ap (daily geomagnetic average).
+raw observed or 81-day centred F10.7, and Ap (daily geomagnetic average).
 
 Assembly follows the thesis language in CONTEXT.md:
 
@@ -57,12 +57,16 @@ NODE_COLUMNS = [
     "log10rho_325_daily_mean",
     "log10rho_825_daily_mean",
 ]
+F107_RAW_COLUMN = "f10_7_observed_daily"
+F107_COLUMNS = [F107_RAW_COLUMN, "f10_7_center81"]
 TARGET_COLUMNS = [
     "log10rho_325_daily_mean",
     "log10rho_825_daily_mean",
 ]
 DATE_COLUMN = "date"
-IMPUTATION_MASK_COLUMNS = [f"{column}_imputed" for column in NODE_COLUMNS]
+IMPUTATION_MASK_COLUMNS = [
+    f"{column}_imputed" for column in [*F107_COLUMNS, *NODE_COLUMNS[1:]]
+]
 
 
 def circular_lon_delta_expr(lon_col: str, target_lon: float) -> pl.Expr:
@@ -187,11 +191,15 @@ def load_co2_daily(path: Path = CO2_PATH) -> pl.DataFrame:
 
 
 def load_space_weather_daily(path: Path = SPACE_WEATHER_PATH) -> pl.DataFrame:
+    raw = pl.read_csv(path)
+    if "F10.7_OBS" not in raw.columns:
+        raise ValueError("space-weather CSV is missing required F10.7_OBS column")
     return (
-        pl.read_csv(path)
+        raw
         .with_columns(pl.col("DATE").str.to_date("%Y-%m-%d").alias("date"))
         .select(
             "date",
+            pl.col("F10.7_OBS").alias(F107_RAW_COLUMN),
             pl.col("F10.7_OBS_CENTER81").alias("f10_7_center81"),
             pl.col("AP_AVG").cast(pl.Float64).alias("ap_avg"),
         )
@@ -263,7 +271,7 @@ def build_five_node_daily(
     combined = combined.sort("date")
 
     filled = {DATE_COLUMN: combined[DATE_COLUMN]}
-    for column in NODE_COLUMNS:
+    for column in [*F107_COLUMNS, *NODE_COLUMNS[1:]]:
         values = combined[column].to_numpy().astype(float)
         if column in TARGET_COLUMNS:
             values, imputed = bounded_gap_fill(values, MAX_GAP_STEPS)
@@ -272,21 +280,22 @@ def build_five_node_daily(
         filled[column] = values
         filled[f"{column}_imputed"] = imputed
     result = pl.DataFrame(filled).select(
-        DATE_COLUMN, *NODE_COLUMNS, *IMPUTATION_MASK_COLUMNS
+        DATE_COLUMN, *F107_COLUMNS, *NODE_COLUMNS[1:], *IMPUTATION_MASK_COLUMNS
     )
     return result.with_columns(pl.col(DATE_COLUMN).cast(pl.Date))
 
 
 def describe(df: pl.DataFrame) -> str:
-    missing = [
-        pl.col(column).is_null() | pl.col(column).is_nan() for column in NODE_COLUMNS
+    data_columns = [
+        column for column in [*F107_COLUMNS, *NODE_COLUMNS[1:]] if column in df.columns
     ]
+    missing = [pl.col(column).is_null() | pl.col(column).is_nan() for column in data_columns]
     complete = df.filter(~pl.any_horizontal(missing))
     lines = [
         f"rows: {len(df)} (complete rows: {len(complete)})",
         f"date range: {df['date'].min()} .. {df['date'].max()}",
     ]
-    for column in NODE_COLUMNS:
+    for column in data_columns:
         missing_count = df.select(
             (pl.col(column).is_null() | pl.col(column).is_nan()).sum()
         ).item()
