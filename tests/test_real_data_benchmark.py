@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+import pytest
 
 from thermodense.benchmarks import real_data
 
@@ -39,9 +40,9 @@ def test_build_is_hasdm_anchored_and_records_imputation_masks(tmp_path: Path) ->
     _write_hasdm(decoded_dir / "HASDM_fixture_merged.parquet")
     space_weather = tmp_path / "space_weather.csv"
     space_weather.write_text(
-        "DATE,F10.7_OBS_CENTER81,AP_AVG\n"
-        "2019-12-31,1,1\n2020-01-01,10,1\n2020-01-02,20,2\n"
-        "2020-01-03,30,3\n2020-01-04,40,4\n"
+        "DATE,F10.7_OBS,F10.7_OBS_CENTER81,AP_AVG\n"
+        "2019-12-31,2,1,1\n2020-01-01,20,10,1\n2020-01-02,30,20,2\n"
+        "2020-01-03,40,30,3\n2020-01-04,50,40,4\n"
     )
     co2 = tmp_path / "co2.csv"
     co2.write_text(
@@ -82,6 +83,14 @@ def test_build_is_hasdm_anchored_and_records_imputation_masks(tmp_path: Path) ->
     assert real_data.daily_hasdm_for_path(
         decoded_dir / "HASDM_fixture_merged.parquet", 20.0
     )["altitude_km"].unique().sort().to_list() == [325.0, 825.0]
+
+
+def test_load_space_weather_daily_rejects_missing_raw_f107_source(tmp_path: Path) -> None:
+    path = tmp_path / "space_weather.csv"
+    path.write_text("DATE,F10.7_OBS_CENTER81,AP_AVG\n2020-01-01,10,1\n")
+
+    with pytest.raises(ValueError, match="F10.7_OBS"):
+        real_data.load_space_weather_daily(path)
 
 
 def test_describe_counts_nulls_and_nans_as_missing() -> None:
