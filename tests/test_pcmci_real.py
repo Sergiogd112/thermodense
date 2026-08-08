@@ -4,6 +4,7 @@ import argparse
 from datetime import date, timedelta
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -1695,6 +1696,168 @@ def test_synthesize_parcorr_matrix_classifies_agreement_and_exploration(
         for link in agreement["exploratory_links"]
     )
     assert len(agreement["case_artifacts"]) == 4
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        None,
+        {},
+        {"source": None, "target": "ap_avg", "lag": 1, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": None, "lag": 1, "sign": 1},
+        {"source": "unknown", "target": "ap_avg", "lag": 1, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "unknown", "lag": 1, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": True, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": "1", "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 181, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": 0},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": True},
+    ],
+)
+def test_parcorr_validator_rejects_hash_valid_malformed_primary_links(
+    tmp_path: Path, link: object
+) -> None:
+    cases = pcmci_real.expand_sensitivity_cases()
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
+        for case in cases
+    ]
+    agreement = pcmci_real.synthesize_parcorr_matrix(rows)
+    agreement["primary_links"] = [link]
+    path = tmp_path / "parcorr.jsonl"
+    path.write_text(json.dumps(agreement) + "\n")
+
+    with pytest.raises(ValueError, match="primary link"):
+        pcmci_real._validate_parcorr_agreement(path, agreement["accepted_quality_rows"])
+
+
+def test_parcorr_validator_rejects_duplicate_physical_primary_link_identity(
+    tmp_path: Path,
+) -> None:
+    cases = pcmci_real.expand_sensitivity_cases()
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
+        for case in cases
+    ]
+    agreement = pcmci_real.synthesize_parcorr_matrix(rows)
+    link = {
+        "source": F107_RAW_COLUMN,
+        "target": "ap_avg",
+        "lag": 1,
+        "sign": 1,
+        "classification": "main_text_robust",
+        "failed_dimensions": [],
+        "failed_stationarity_cells": [],
+        "centered_matches": [],
+        "centered_delay_equivalent": False,
+        "evidence": {"primary": {}, "detrending": [], "timing": []},
+    }
+    agreement["primary_links"] = [
+        link,
+        link | {"source": NODE_COLUMNS[0]},
+    ]
+    path = tmp_path / "parcorr.jsonl"
+    path.write_text(json.dumps(agreement) + "\n")
+
+    with pytest.raises(ValueError, match="duplicate"):
+        pcmci_real._validate_parcorr_agreement(path, agreement["accepted_quality_rows"])
+
+
+def test_cmiknn_rejects_malformed_parcorr_before_children_or_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cases = pcmci_real.expand_sensitivity_cases()
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
+        for case in cases
+    ]
+    agreement = pcmci_real.synthesize_parcorr_matrix(rows)
+    agreement["primary_links"] = [
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": True, "sign": 1}
+    ]
+    parcorr = tmp_path / "parcorr.jsonl"
+    parcorr.write_text(json.dumps(agreement) + "\n")
+    input_path = tmp_path / "input.csv"
+    input_path.write_bytes(b"source bytes")
+    output = tmp_path / "result.jsonl"
+    output.write_bytes(b"existing bytes")
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--cmiknn-sensitivity-matrix",
+            "--parcorr-agreement",
+            str(parcorr),
+            "--overwrite",
+        ]
+    )
+    input_data = pcmci_real.RealInput(
+        np.array(["2020-01-01"], dtype="datetime64[D]"),
+        np.ones((1, len(NODE_COLUMNS))),
+        {},
+        np.ones(1),
+    )
+    monkeypatch.setattr(pcmci_real, "load_input", lambda *_args: input_data)
+    monkeypatch.setattr(
+        pcmci_real,
+        "prepare_sensitivity_input",
+        lambda *_args: (input_data, NODE_COLUMNS, agreement["accepted_quality_rows"]),
+    )
+    monkeypatch.setattr(
+        pcmci_real,
+        "_run_isolated_case",
+        lambda *_args: pytest.fail("started child before ParCorr validation"),
+    )
+
+    with pytest.raises(ValueError, match="lag"):
+        pcmci_real.run(args)
+
+    assert input_path.read_bytes() == b"source bytes"
+    assert output.read_bytes() == b"existing bytes"
+
+
+def test_run_rejects_input_output_hardlink_before_load(
+    tmp_path: Path, monkeypatch
+) -> None:
+    input_path = tmp_path / "input.csv"
+    output = tmp_path / "result.jsonl"
+    input_path.write_bytes(b"source bytes")
+    os.link(input_path, output)
+    args = pcmci_real.parser().parse_args(
+        ["run", "--input", str(input_path), "--output", str(output), "--overwrite"]
+    )
+    monkeypatch.setattr(
+        pcmci_real, "load_input", lambda *_args: pytest.fail("loaded before validation")
+    )
+
+    with pytest.raises(ValueError, match="different paths"):
+        pcmci_real.run(args)
+
+    assert input_path.read_bytes() == b"source bytes"
 
 
 def test_synthesis_keeps_sign_mismatch_and_deduplicates_contemporaneous_orientation(

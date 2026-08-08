@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pytest
 import shutil
 from datetime import date, timedelta
@@ -110,6 +111,27 @@ def test_gated_run_rejects_path_overlap_before_overwrite(
         assert args.import_capability.read_bytes() == b"source bytes"
     if args.parcorr_agreement is not None and args.parcorr_agreement.exists():
         assert args.parcorr_agreement.read_bytes() == b"source bytes"
+
+
+@pytest.mark.parametrize(
+    "source_attribute", ["input", "import_capability", "parcorr_agreement", "state"]
+)
+def test_gated_run_rejects_read_source_output_hardlinks_before_load(
+    tmp_path: Path, source_attribute: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    args = _args(tmp_path)
+    source = tmp_path / f"{source_attribute}-source"
+    source.write_bytes(b"source bytes")
+    os.link(source, args.output)
+    setattr(args, source_attribute, source)
+    monkeypatch.setattr(
+        pcmci_real, "load_input", lambda _path: pytest.fail("loaded before validation")
+    )
+
+    with pytest.raises(ValueError, match="overlap"):
+        pcmci_real.run_gpdctorch_gated(args)
+
+    assert source.read_bytes() == b"source bytes"
 
 
 def _child(calls: list[tuple[str, int]], command, timeout, _threads, _environment):

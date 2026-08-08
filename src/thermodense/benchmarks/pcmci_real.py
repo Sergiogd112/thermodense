@@ -113,6 +113,19 @@ def _physical_node(node_name: str) -> str:
     return "f10_7" if node_name in {F107_RAW_COLUMN, NODE_COLUMNS[0]} else node_name
 
 
+def _existing_paths_alias(first: Path, second: Path) -> bool:
+    """Return whether two existing paths name the same inode.
+
+    ``resolve()`` normalizes spelling and symlinks, but deliberately does not
+    identify hardlinks.  A missing path is not an alias yet, and inaccessible
+    paths are left to their normal read/write operation to report.
+    """
+    try:
+        return first.samefile(second)
+    except OSError:
+        return False
+
+
 def _expected_node_order(case: SensitivityCase) -> list[str]:
     return (
         [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
@@ -1853,6 +1866,77 @@ def _validate_parcorr_agreement(
         raise ValueError("ParCorr agreement stationarity provenance is malformed")
     if not isinstance(agreement.get("primary_links"), list):
         raise ValueError("ParCorr agreement lacks primary links")
+    known_nodes = {F107_RAW_COLUMN, *NODE_COLUMNS}
+    identities = set()
+    required_link_fields = {
+        "source",
+        "target",
+        "lag",
+        "sign",
+        "classification",
+        "failed_dimensions",
+        "failed_stationarity_cells",
+        "centered_matches",
+        "centered_delay_equivalent",
+        "evidence",
+    }
+    for link in agreement["primary_links"]:
+        if not isinstance(link, dict):
+            raise ValueError("ParCorr primary link must be an object")
+        source, target, lag, sign = (
+            link.get("source"),
+            link.get("target"),
+            link.get("lag"),
+            link.get("sign"),
+        )
+        if not isinstance(source, str) or source not in known_nodes:
+            raise ValueError("ParCorr primary link source is not a canonical node")
+        if not isinstance(target, str) or target not in known_nodes:
+            raise ValueError("ParCorr primary link target is not a canonical node")
+        if (
+            not isinstance(lag, int)
+            or isinstance(lag, bool)
+            or not 0 <= lag <= DEFAULT_TAU_MAX
+        ):
+            raise ValueError(
+                "ParCorr primary link lag must be an integer from 0 to 180"
+            )
+        if sign not in (-1, 1) or isinstance(sign, bool):
+            raise ValueError("ParCorr primary link sign must be -1 or 1")
+        identity = (_physical_node(source), _physical_node(target), lag, sign)
+        if identity in identities:
+            raise ValueError("ParCorr agreement has duplicate primary link identities")
+        identities.add(identity)
+        if (
+            not required_link_fields <= link.keys()
+            or (
+                link["classification"]
+                not in {"factor_sensitive", "stationarity_limited", "main_text_robust"}
+            )
+            or (
+                not isinstance(link["failed_dimensions"], list)
+                or not all(
+                    dimension in {"detrending", "timing"}
+                    for dimension in link["failed_dimensions"]
+                )
+            )
+            or (
+                not isinstance(link["failed_stationarity_cells"], list)
+                or not all(
+                    isinstance(cell, str) for cell in link["failed_stationarity_cells"]
+                )
+            )
+            or not isinstance(link["centered_matches"], list)
+            or not isinstance(link["centered_delay_equivalent"], bool)
+            or not isinstance(link["evidence"], dict)
+            or set(link["evidence"])
+            != {
+                "primary",
+                "detrending",
+                "timing",
+            }
+        ):
+            raise ValueError("ParCorr primary link has malformed canonical fields")
     return agreement, {
         "path": str(path),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -2014,13 +2098,17 @@ def run_gpdctorch_gated(args: argparse.Namespace) -> int:
     for source_name, source_path in read_sources.items():
         if source_path is None:
             continue
-        if source_path in (output, state_path):
+        if (
+            source_path in (output, state_path)
+            or _existing_paths_alias(source_path, output)
+            or _existing_paths_alias(source_path, state_path)
+        ):
             raise ValueError(f"{source_name} must not overlap output or state")
         if source_path.is_relative_to(artifacts):
             raise ValueError(
                 f"{source_name} must not reside inside the derived artifact directory"
             )
-    if state_path == output:
+    if state_path == output or _existing_paths_alias(state_path, output):
         raise ValueError("state must not overlap output")
     lock_path = _gpdctorch_gate_lock_path(state_path, artifacts)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2364,7 +2452,7 @@ def run(args: argparse.Namespace) -> int:
         args.parcorr_agreement.resolve() if args.parcorr_agreement is not None else None
     )
     artifact_directory = args.output.parent / f"{args.output.stem}_artifacts"
-    if args.input == args.output:
+    if args.input == args.output or _existing_paths_alias(args.input, args.output):
         raise ValueError("input and output must be different paths")
     if args.input == artifact_directory or args.input.is_relative_to(
         artifact_directory
@@ -2400,8 +2488,10 @@ def run(args: argparse.Namespace) -> int:
             raise ValueError("CMIknn sensitivity matrix does not accept --row-limit")
         if args.parcorr_agreement is not None:
             parcorr_path = args.parcorr_agreement
-            if parcorr_path == args.output.resolve() or parcorr_path.is_relative_to(
-                artifact_directory.resolve()
+            if (
+                parcorr_path == args.output.resolve()
+                or _existing_paths_alias(parcorr_path, args.output)
+                or parcorr_path.is_relative_to(artifact_directory.resolve())
             ):
                 raise ValueError(
                     "ParCorr agreement must not overlap CMIknn output or artifacts"
