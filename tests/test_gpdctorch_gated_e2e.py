@@ -12,6 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+from filelock import FileLock
 
 from thermodense.benchmarks import gpdctorch_gates, pcmci_real, runtime
 from thermodense.benchmarks.real_data import DATE_COLUMN, F107_RAW_COLUMN, NODE_COLUMNS
@@ -443,6 +444,78 @@ def test_overwrite_resets_explicit_state_and_artifacts(
     assert pcmci_real.run_gpdctorch_gated(args) == 0
     assert not stale.exists()
     assert json.loads(args.state.read_text())["state"] == "complete"
+
+
+def test_gated_run_rejects_an_active_state_lock_then_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_input(tmp_path / "input.csv")
+    calls: list[tuple[str, int]] = []
+    monkeypatch.setattr(gpdctorch_gates, "gpu_hardware", lambda: HARDWARE)
+    monkeypatch.setattr(
+        runtime, "run_isolated_process", lambda *args: _child(calls, *args)
+    )
+    args = _args(tmp_path)
+    artifacts = tmp_path / "agreement_artifacts"
+    state_path = artifacts / "gpdctorch-gates.json"
+    lock_path = pcmci_real._gpdctorch_gate_lock_path(state_path, artifacts)
+    state_bytes = state_path.read_bytes() if state_path.exists() else None
+
+    with FileLock(lock_path, timeout=0):
+        with pytest.raises(gpdctorch_gates.GateError, match="already in use"):
+            pcmci_real.run_gpdctorch_gated(args)
+
+    assert (state_path.read_bytes() if state_path.exists() else None) == state_bytes
+    assert calls == []
+    assert pcmci_real.run_gpdctorch_gated(args) == 0
+    completed_calls = calls.copy()
+    assert pcmci_real.run_gpdctorch_gated(args) == 0
+    assert calls == completed_calls
+
+
+def test_gated_state_aliases_share_a_lock_identity(tmp_path: Path) -> None:
+    output = tmp_path / "agreement.jsonl"
+    output_alias = tmp_path / "aliases" / ".." / "agreement.jsonl"
+    artifacts = output.resolve().parent / f"{output.resolve().stem}_artifacts"
+    alias_artifacts = (
+        output_alias.resolve().parent / f"{output_alias.resolve().stem}_artifacts"
+    )
+    state_path = (artifacts / "gpdctorch-gates.json").resolve()
+    alias_state_path = (alias_artifacts / "gpdctorch-gates.json").resolve()
+
+    assert state_path == alias_state_path
+    assert pcmci_real._gpdctorch_gate_lock_path(
+        state_path, artifacts
+    ) == pcmci_real._gpdctorch_gate_lock_path(alias_state_path, alias_artifacts)
+
+
+def test_overwrite_does_not_remove_gate_lock(tmp_path: Path, monkeypatch) -> None:
+    _write_input(tmp_path / "input.csv")
+    monkeypatch.setattr(gpdctorch_gates, "gpu_hardware", lambda: HARDWARE)
+    monkeypatch.setattr(
+        runtime, "run_isolated_process", lambda *args: _child([], *args)
+    )
+    args = _args(tmp_path)
+    artifacts = tmp_path / "agreement_artifacts"
+    state_path = artifacts / "gpdctorch-gates.json"
+    lock_path = pcmci_real._gpdctorch_gate_lock_path(state_path, artifacts)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    args.overwrite = True
+
+    with FileLock(lock_path, timeout=0):
+        assert (
+            pcmci_real._run_gpdctorch_gated_locked(
+                args,
+                args.output.resolve(),
+                artifacts,
+                state_path,
+                args.input.resolve(),
+                None,
+                None,
+            )
+            == 0
+        )
+        assert lock_path.exists()
 
 
 def test_gate_identity_rejects_a_different_output_path(

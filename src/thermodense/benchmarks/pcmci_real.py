@@ -22,6 +22,7 @@ import time
 from typing import Any, Literal, cast
 import warnings
 
+from filelock import FileLock, Timeout
 import numpy as np
 import polars as pl
 
@@ -1843,6 +1844,15 @@ def _recorded_output_matches(state: dict[str, Any], output: Path) -> bool:
     )
 
 
+def _gpdctorch_gate_lock_path(state_path: Path, artifacts: Path) -> Path:
+    """Return the stable inter-process lock path for a resolved gate state."""
+    lock_parent = (
+        artifacts.parent if state_path.is_relative_to(artifacts) else state_path.parent
+    )
+    state_digest = hashlib.sha256(str(state_path).encode()).hexdigest()
+    return lock_parent / f".gpdctorch-gates-{state_digest}.lock"
+
+
 def run_gpdctorch_gated(args: argparse.Namespace) -> int:
     """Run the only public GPDCtorch production entry point, in gate order."""
     if args.row_limit is not None:
@@ -1874,6 +1884,35 @@ def run_gpdctorch_gated(args: argparse.Namespace) -> int:
             )
     if state_path == output:
         raise ValueError("state must not overlap output")
+    lock_path = _gpdctorch_gate_lock_path(state_path, artifacts)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with FileLock(lock_path, timeout=0):
+            return _run_gpdctorch_gated_locked(
+                args,
+                output,
+                artifacts,
+                state_path,
+                input_path,
+                capability_path,
+                parcorr_path,
+            )
+    except Timeout as error:
+        raise gpdctorch_gates.GateError(
+            f"GPDCtorch gate state is already in use: {state_path}"
+        ) from error
+
+
+def _run_gpdctorch_gated_locked(
+    args: argparse.Namespace,
+    output: Path,
+    artifacts: Path,
+    state_path: Path,
+    input_path: Path,
+    capability_path: Path | None,
+    parcorr_path: Path | None,
+) -> int:
+    """Run a GPDCtorch gate lifecycle while its state lock is held."""
     overwrite = getattr(args, "overwrite", False)
     if overwrite:
         output.unlink(missing_ok=True)
