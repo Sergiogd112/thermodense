@@ -4,6 +4,7 @@ import argparse
 from datetime import date, timedelta
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -270,6 +271,90 @@ def test_cross_method_comparison_reports_gpdc_only_links() -> None:
     assert comparison["gpdctorch_only_method_sensitive"][0]["classification"] == (
         "gpdctorch_only_method_sensitive"
     )
+
+
+def test_cmiknn_comparison_normalizes_f107_and_never_vetoes_parcorr() -> None:
+    comparison = pcmci_real.compare_cmiknn_with_parcorr(
+        {
+            "state": "complete",
+            "method": "cmiknn",
+            "physical_lag_window_days": {"min": 0, "max": 10},
+            "primary_links": [
+                {"source": "f10_7_center81", "target": "ap_avg", "lag": 1, "sign": 1},
+                {"source": F107_RAW_COLUMN, "target": "co2_ppm", "lag": 2, "sign": -1},
+            ],
+        },
+        {
+            "state": "complete",
+            "method": "parcorr",
+            "physical_lag_window_days": {"min": 0, "max": 180},
+            "primary_links": [
+                {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": 1},
+                {"source": F107_RAW_COLUMN, "target": "co2_ppm", "lag": 2, "sign": 1},
+                {"source": F107_RAW_COLUMN, "target": "co2_ppm", "lag": 11, "sign": -1},
+            ],
+        },
+    )
+
+    assert [item["cmiknn_support"] for item in comparison["comparisons"]] == [
+        "strengthens",
+        "qualifies_disagreement_or_not_detected",
+    ]
+    assert all(item["vetoed"] is False for item in comparison["comparisons"])
+    assert comparison["not_a_substitute_for_parcorr_days_11_180"] is True
+    assert comparison["parcorr_primary_links_outside_cmiknn_scope_count"] == 1
+    assert comparison["cmiknn_only_method_sensitive"][0]["classification"] == (
+        "cmiknn_only_method_sensitive"
+    )
+
+
+def test_synthesize_cmiknn_matrix_uses_registered_factor_tiers_and_scope(
+    tmp_path: Path,
+) -> None:
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [
+                (
+                    0,
+                    1,
+                    1 if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else 2,
+                    "-->",
+                    0.4,
+                )
+            ],
+        )
+        for case in pcmci_real.expand_sensitivity_cases()
+    ]
+    for row in rows:
+        row["method"] = "cmiknn"
+        row["tau_max"] = 10
+        row["settings"] = pcmci_real.real_method_settings("cmiknn", 3) | {"threads": 2}
+        nodes = row["sensitivity_case"]["node_order"]
+        row["link_assumptions"] = pcmci_real._link_assumption_metadata(10, nodes)
+        artifact = Path(row["artifact"]["path"])
+        with np.load(artifact, allow_pickle=False) as saved:
+            contents = {
+                name: saved[name][..., :11] if name != "node_names" else saved[name]
+                for name in saved.files
+            }
+        np.savez_compressed(artifact, **contents)
+        row["artifact"]["sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+    agreement = pcmci_real.synthesize_cmiknn_matrix(rows)
+
+    assert agreement["method"] == "cmiknn"
+    assert agreement["primary_links"][0]["classification"] == "main_text_robust"
+    assert (
+        agreement["method_scope"]
+        == "nonlinear sensitivity; not a substitute for ParCorr"
+    )
+    assert agreement["untested_parcorr_lags_11_180"] is True
+    assert agreement["settings"]["workers"] == 3
 
 
 def test_gated_derived_retry_keeps_output_until_parcorr_is_valid(
@@ -604,6 +689,21 @@ def test_real_run_enforces_cmiknn_ten_lag_step_resource_cap(
         == 2
     )
     assert "resource limit of 10 lag steps" in capsys.readouterr().err
+
+    assert (
+        pcmci_real.main(
+            [
+                "run",
+                "--output",
+                str(output),
+                "--cmiknn-sensitivity-matrix",
+                "--tau-max",
+                "11",
+            ]
+        )
+        == 2
+    )
+    assert "0-10 days" in capsys.readouterr().err
 
     parsed = pcmci_real.parser().parse_args(
         [
@@ -957,6 +1057,62 @@ def test_production_matrix_runs_exact_parcorr_cells_and_writes_agreement(
     assert agreement["physical_lag_window_days"] == {"min": 0, "max": 180}
 
 
+def test_cmiknn_matrix_runs_exact_cells_and_records_bounded_scope(
+    tmp_path: Path, monkeypatch
+) -> None:
+    input_path = tmp_path / "five_node.csv"
+    _frame().write_csv(input_path)
+    output = tmp_path / "result.jsonl"
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--cmiknn-sensitivity-matrix",
+            "--cmiknn-workers",
+            "3",
+        ]
+    )
+    calls = []
+
+    def fake_case(args, method, case, threads, artifact):
+        calls.append((method, case))
+        return {
+            "status": "succeeded",
+            "artifact": pcmci_real.runtime.write_npz_artifact(
+                artifact,
+                {
+                    "graph": np.full((5, 5, 11), "", dtype="<U3"),
+                    "p_matrix": np.ones((5, 5, 11)),
+                    "val_matrix": np.zeros((5, 5, 11)),
+                },
+                node_names=(
+                    [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+                    if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+                    else NODE_COLUMNS
+                ),
+            ),
+        }
+
+    monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
+
+    assert pcmci_real.run(args) == 0
+    assert len(calls) == 4
+    assert {method for method, _case in calls} == {"cmiknn"}
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert {row["tau_max"] for row in rows} == {10}
+    assert {row["settings"]["workers"] for row in rows} == {3}
+    assert {row["untested_parcorr_lags_11_180"] for row in rows} == {True}
+    agreement = json.loads(
+        (
+            tmp_path / "result_artifacts" / "cmiknn-sensitivity-agreement.jsonl"
+        ).read_text()
+    )
+    assert agreement["untested_parcorr_lags_11_180"] is True
+
+
 @pytest.mark.parametrize(
     "argv, message",
     [
@@ -1154,6 +1310,50 @@ def test_production_matrix_overwrite_cleans_stale_artifacts_before_input_load(
         )["state"]
         == "incomplete"
     )
+
+
+@pytest.mark.parametrize("source_kind", ["same_as_output", "inside_artifacts"])
+def test_cmiknn_overwrite_rejects_source_overlap_before_load_or_children(
+    tmp_path: Path, monkeypatch, source_kind: str
+) -> None:
+    output = tmp_path / "result.jsonl"
+    artifact_directory = tmp_path / "result_artifacts"
+    if source_kind == "same_as_output":
+        input_path = tmp_path / "nested" / ".." / "result.jsonl"
+        (tmp_path / "nested").mkdir()
+    else:
+        input_path = artifact_directory / "source.csv"
+        input_path.parent.mkdir()
+    source_bytes = b"source bytes must survive overwrite validation"
+    input_path.write_bytes(source_bytes)
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--cmiknn-sensitivity-matrix",
+            "--tau-max",
+            "10",
+            "--overwrite",
+        ]
+    )
+
+    monkeypatch.setattr(
+        pcmci_real,
+        "load_input",
+        lambda *_args, **_kwargs: pytest.fail("loaded before overlap validation"),
+    )
+    monkeypatch.setattr(
+        pcmci_real,
+        "_run_isolated_case",
+        lambda *_args, **_kwargs: pytest.fail("children started before validation"),
+    )
+
+    with pytest.raises(ValueError):
+        pcmci_real.run(args)
+    assert input_path.read_bytes() == source_bytes
 
 
 @pytest.mark.parametrize("all_sensitivity_cases", [False, True])
@@ -1496,6 +1696,168 @@ def test_synthesize_parcorr_matrix_classifies_agreement_and_exploration(
         for link in agreement["exploratory_links"]
     )
     assert len(agreement["case_artifacts"]) == 4
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        None,
+        {},
+        {"source": None, "target": "ap_avg", "lag": 1, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": None, "lag": 1, "sign": 1},
+        {"source": "unknown", "target": "ap_avg", "lag": 1, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "unknown", "lag": 1, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": True, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": "1", "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 181, "sign": 1},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": 0},
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": True},
+    ],
+)
+def test_parcorr_validator_rejects_hash_valid_malformed_primary_links(
+    tmp_path: Path, link: object
+) -> None:
+    cases = pcmci_real.expand_sensitivity_cases()
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
+        for case in cases
+    ]
+    agreement = pcmci_real.synthesize_parcorr_matrix(rows)
+    agreement["primary_links"] = [link]
+    path = tmp_path / "parcorr.jsonl"
+    path.write_text(json.dumps(agreement) + "\n")
+
+    with pytest.raises(ValueError, match="primary link"):
+        pcmci_real._validate_parcorr_agreement(path, agreement["accepted_quality_rows"])
+
+
+def test_parcorr_validator_rejects_duplicate_physical_primary_link_identity(
+    tmp_path: Path,
+) -> None:
+    cases = pcmci_real.expand_sensitivity_cases()
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
+        for case in cases
+    ]
+    agreement = pcmci_real.synthesize_parcorr_matrix(rows)
+    link = {
+        "source": F107_RAW_COLUMN,
+        "target": "ap_avg",
+        "lag": 1,
+        "sign": 1,
+        "classification": "main_text_robust",
+        "failed_dimensions": [],
+        "failed_stationarity_cells": [],
+        "centered_matches": [],
+        "centered_delay_equivalent": False,
+        "evidence": {"primary": {}, "detrending": [], "timing": []},
+    }
+    agreement["primary_links"] = [
+        link,
+        link | {"source": NODE_COLUMNS[0]},
+    ]
+    path = tmp_path / "parcorr.jsonl"
+    path.write_text(json.dumps(agreement) + "\n")
+
+    with pytest.raises(ValueError, match="duplicate"):
+        pcmci_real._validate_parcorr_agreement(path, agreement["accepted_quality_rows"])
+
+
+def test_cmiknn_rejects_malformed_parcorr_before_children_or_overwrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cases = pcmci_real.expand_sensitivity_cases()
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
+        for case in cases
+    ]
+    agreement = pcmci_real.synthesize_parcorr_matrix(rows)
+    agreement["primary_links"] = [
+        {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": True, "sign": 1}
+    ]
+    parcorr = tmp_path / "parcorr.jsonl"
+    parcorr.write_text(json.dumps(agreement) + "\n")
+    input_path = tmp_path / "input.csv"
+    input_path.write_bytes(b"source bytes")
+    output = tmp_path / "result.jsonl"
+    output.write_bytes(b"existing bytes")
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--cmiknn-sensitivity-matrix",
+            "--parcorr-agreement",
+            str(parcorr),
+            "--overwrite",
+        ]
+    )
+    input_data = pcmci_real.RealInput(
+        np.array(["2020-01-01"], dtype="datetime64[D]"),
+        np.ones((1, len(NODE_COLUMNS))),
+        {},
+        np.ones(1),
+    )
+    monkeypatch.setattr(pcmci_real, "load_input", lambda *_args: input_data)
+    monkeypatch.setattr(
+        pcmci_real,
+        "prepare_sensitivity_input",
+        lambda *_args: (input_data, NODE_COLUMNS, agreement["accepted_quality_rows"]),
+    )
+    monkeypatch.setattr(
+        pcmci_real,
+        "_run_isolated_case",
+        lambda *_args: pytest.fail("started child before ParCorr validation"),
+    )
+
+    with pytest.raises(ValueError, match="lag"):
+        pcmci_real.run(args)
+
+    assert input_path.read_bytes() == b"source bytes"
+    assert output.read_bytes() == b"existing bytes"
+
+
+def test_run_rejects_input_output_hardlink_before_load(
+    tmp_path: Path, monkeypatch
+) -> None:
+    input_path = tmp_path / "input.csv"
+    output = tmp_path / "result.jsonl"
+    input_path.write_bytes(b"source bytes")
+    os.link(input_path, output)
+    args = pcmci_real.parser().parse_args(
+        ["run", "--input", str(input_path), "--output", str(output), "--overwrite"]
+    )
+    monkeypatch.setattr(
+        pcmci_real, "load_input", lambda *_args: pytest.fail("loaded before validation")
+    )
+
+    with pytest.raises(ValueError, match="different paths"):
+        pcmci_real.run(args)
+
+    assert input_path.read_bytes() == b"source bytes"
 
 
 def test_synthesis_keeps_sign_mismatch_and_deduplicates_contemporaneous_orientation(
