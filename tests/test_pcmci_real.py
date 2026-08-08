@@ -37,6 +37,176 @@ def test_preprocess_preserves_nan_and_standardizes_finite_values() -> None:
     assert np.isclose(np.nanstd(result[:, 1]), 1.0)
 
 
+def test_stationarity_qualification_passes_each_node_and_records_exact_spans() -> None:
+    dates = np.datetime64("2020-01-01") + np.arange(363).astype("timedelta64[D]")
+    values = np.column_stack((np.arange(363.0), np.arange(363.0)))
+    values[:2, 0] = np.nan
+
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        dates,
+        ["first", "second"],
+        adf=lambda _values: {"statistic": -4.0, "p_value": 0.01},
+        kpss=lambda _values: {"statistic": 0.1, "p_value": 0.2},
+    )
+
+    first = diagnostics["nodes"]["first"]
+    assert first["span"] == {
+        "start": "2020-01-03",
+        "end": "2020-12-28",
+        "start_index": 2,
+        "end_index": 362,
+    }
+    assert first["sample_count"] == 361
+    assert diagnostics["causal_interpretation_eligible"] is True
+    assert diagnostics["sensitivity_evidence_only"] is False
+    assert first["adf"]["outcome"] == "reject_unit_root"
+    assert first["kpss"]["outcome"] == "do_not_reject_level_stationarity"
+
+
+@pytest.mark.parametrize(
+    ("adf_p_value", "kpss_p_value", "expected_outcome"),
+    [
+        (0.2, 0.2, "does_not_reject_unit_root"),
+        (0.01, 0.01, "reject_level_stationarity"),
+    ],
+)
+def test_stationarity_qualification_records_test_family_failures(
+    adf_p_value: float, kpss_p_value: float, expected_outcome: str
+) -> None:
+    values = np.column_stack((np.arange(361.0), np.arange(1.0, 362.0)))
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        np.datetime64("2020-01-01") + np.arange(361).astype("timedelta64[D]"),
+        ["first", "second"],
+        adf=lambda _values: {"statistic": -4.0, "p_value": adf_p_value},
+        kpss=lambda _values: {"statistic": 0.1, "p_value": kpss_p_value},
+    )
+
+    assert diagnostics["causal_interpretation_eligible"] is False
+    assert diagnostics["sensitivity_evidence_only"] is True
+    assert expected_outcome in {
+        diagnostics["nodes"]["first"]["adf"]["outcome"],
+        diagnostics["nodes"]["first"]["kpss"]["outcome"],
+    }
+
+
+def test_stationarity_qualification_handles_missing_and_too_short_spans() -> None:
+    values = np.array([[np.nan, 1.0], [np.nan, np.nan], [np.nan, 2.0]])
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        np.arange("2020-01-01", "2020-01-04", dtype="datetime64[D]"),
+        ["missing", "short"],
+    )
+
+    assert diagnostics["causal_interpretation_eligible"] is False
+    assert diagnostics["nodes"]["missing"]["outcome"] == "not_qualified_missing_span"
+    assert diagnostics["nodes"]["short"]["outcome"] == "not_qualified_too_short_span"
+
+
+def test_holm_adjustment_is_boundary_correct_and_node_order_invariant() -> None:
+    p_values = {"z": 0.025, "a": 0.01, "m": 0.03}
+
+    adjusted = pcmci_real.holm_adjusted_pvalues(p_values)
+
+    assert adjusted == {"z": 0.05, "a": 0.03, "m": 0.05}
+    assert adjusted == pcmci_real.holm_adjusted_pvalues(dict(reversed(list(p_values.items()))))
+
+
+def test_stationarity_qualification_uses_statsmodels_and_records_raw_results() -> None:
+    values = np.random.default_rng(6).normal(size=(400, 2))
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        np.datetime64("2020-01-01") + np.arange(400).astype("timedelta64[D]"),
+        ["first", "second"],
+    )
+
+    adf = diagnostics["nodes"]["first"]["adf"]
+    kpss = diagnostics["nodes"]["first"]["kpss"]
+    assert {"statistic", "raw_p_value", "adjusted_p_value", "used_lag"} <= adf.keys()
+    assert {"statistic", "raw_p_value", "adjusted_p_value", "used_lag"} <= kpss.keys()
+
+
+def test_stationarity_full_family_holm_includes_missing_nodes() -> None:
+    values = np.column_stack((np.arange(361.0), np.full(361, np.nan)))
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        np.datetime64("2020-01-01") + np.arange(361).astype("timedelta64[D]"),
+        ["tested", "missing"],
+        adf=lambda _values: {"statistic": -4.0, "p_value": 0.03},
+        kpss=lambda _values: {"statistic": 0.1, "p_value": 0.2},
+    )
+
+    assert diagnostics["test_families"]["adf"]["family_size"] == 2
+    assert diagnostics["test_families"]["adf"]["unavailable_nodes"] == ["missing"]
+    assert diagnostics["nodes"]["tested"]["adf"]["adjusted_p_value"] == 0.06
+    assert diagnostics["causal_interpretation_eligible"] is False
+
+
+def test_stationarity_full_family_holm_includes_test_error_nodes() -> None:
+    values = np.column_stack((np.arange(361.0), np.arange(1.0, 362.0)))
+
+    def adf(series: np.ndarray) -> dict[str, float]:
+        if series[0] == 0:
+            return {"statistic": -4.0, "p_value": 0.03}
+        raise ValueError("test failure")
+
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        np.datetime64("2020-01-01") + np.arange(361).astype("timedelta64[D]"),
+        ["tested", "error"],
+        adf=adf,
+        kpss=lambda _values: {"statistic": 0.1, "p_value": 0.2},
+    )
+
+    assert diagnostics["test_families"]["adf"]["unavailable_nodes"] == ["error"]
+    assert diagnostics["test_families"]["kpss"]["tested_nodes"] == ["error", "tested"]
+    assert diagnostics["nodes"]["tested"]["adf"]["adjusted_p_value"] == 0.06
+    assert diagnostics["nodes"]["error"]["outcome"] == "not_qualified_test_error"
+    assert diagnostics["nodes"]["error"]["adf"]["outcome"] == "test_error"
+    assert diagnostics["nodes"]["error"]["kpss"]["raw_p_value"] == 0.2
+
+
+def test_stationarity_kpss_failure_still_records_adf_and_family_membership() -> None:
+    values = np.column_stack((np.arange(361.0), np.arange(1.0, 362.0)))
+
+    def kpss(series: np.ndarray) -> dict[str, float]:
+        if series[0] == 0:
+            return {"statistic": 0.1, "p_value": 0.2}
+        raise ValueError("test failure")
+
+    diagnostics = pcmci_real.stationarity_qualification(
+        values,
+        np.datetime64("2020-01-01") + np.arange(361).astype("timedelta64[D]"),
+        ["tested", "error"],
+        adf=lambda _values: {"statistic": -4.0, "p_value": 0.03},
+        kpss=kpss,
+    )
+
+    assert diagnostics["test_families"]["adf"]["tested_nodes"] == ["error", "tested"]
+    assert diagnostics["test_families"]["kpss"]["unavailable_nodes"] == ["error"]
+    assert diagnostics["nodes"]["error"]["adf"]["adjusted_p_value"] == 0.06
+    assert diagnostics["nodes"]["error"]["kpss"]["outcome"] == "test_error"
+
+
+@pytest.mark.parametrize("invalid_p_value", [np.nan, -0.01, 1.01])
+def test_stationarity_invalid_p_values_are_unavailable(invalid_p_value: float) -> None:
+    diagnostics = pcmci_real.stationarity_qualification(
+        np.column_stack((np.arange(361.0), np.arange(1.0, 362.0))),
+        np.datetime64("2020-01-01") + np.arange(361).astype("timedelta64[D]"),
+        ["invalid", "valid"],
+        adf=lambda values: {
+            "statistic": -4.0,
+            "p_value": invalid_p_value if values[0] == 0 else 0.01,
+        },
+        kpss=lambda _values: {"statistic": 0.1, "p_value": 0.2},
+    )
+
+    assert diagnostics["nodes"]["invalid"]["adf"]["outcome"] == "test_error"
+    assert diagnostics["test_families"]["adf"]["unavailable_nodes"] == ["invalid"]
+    assert diagnostics["nodes"]["valid"]["adf"]["adjusted_p_value"] == 0.02
+
+
 def test_registered_sensitivity_cases_expand_the_full_common_row_matrix() -> None:
     cases = pcmci_real.expand_sensitivity_cases()
 
@@ -302,6 +472,14 @@ def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -
         }
 
     monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
+    monkeypatch.setattr(
+        pcmci_real,
+        "stationarity_qualification",
+        lambda *_args: {
+            "causal_interpretation_eligible": False,
+            "sensitivity_evidence_only": True,
+        },
+    )
 
     assert pcmci_real.run(args) == 0
     rows = [json.loads(line) for line in output.read_text().splitlines()]
@@ -319,6 +497,19 @@ def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -
     }
     assert "calendar month/day" in row["preprocessing"]["seasonal_climatology"]
     assert row["preprocessing"]["february_29_has_distinct_climatology"] is True
+    assert row["causal_interpretation_eligible"] is False
+    assert row["sensitivity_evidence_only"] is True
+    assert row["stationarity_qualification"]["provenance_identity"]["node_order"] == [
+        F107_RAW_COLUMN,
+        *NODE_COLUMNS[1:],
+    ]
+    assert row["rolling_diagnostics"]["window_days"] == 365
+    assert "does not alter qualification" in row["rolling_diagnostics"]["diagnostic"]
+    with np.load(row["rolling_diagnostics"]["path"], allow_pickle=False) as rolling:
+        assert sorted(rolling.files) == ["dates", "node_names", "rolling_mean", "rolling_variance"]
+        assert rolling["node_names"].tolist() == [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+        assert rolling["rolling_mean"].shape == (20, len(NODE_COLUMNS))
+        assert rolling["rolling_variance"].shape == (20, len(NODE_COLUMNS))
     assert row["artifact"]["format"] == "npz-compressed"
     assert row["artifact"]["keys"] == [
         "graph",
@@ -335,6 +526,67 @@ def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -
         assert saved["node_names"].tolist() == NODE_COLUMNS
         for name, expected in matrices.items():
             assert np.array_equal(saved[name], expected)
+
+
+def test_multi_method_run_reuses_one_case_diagnostic_artifact(
+    tmp_path: Path, monkeypatch
+) -> None:
+    input_path = tmp_path / "five_node.csv"
+    _frame().write_csv(input_path)
+    output = tmp_path / "result.jsonl"
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--methods",
+            "parcorr",
+            "cmiknn",
+            "--tau-max",
+            "1",
+        ]
+    )
+    qualification_calls = []
+    preprocessing_calls = []
+    rolling_calls = []
+    artifact_calls = []
+
+    def qualification(*_args):
+        qualification_calls.append(None)
+        return {"causal_interpretation_eligible": False, "sensitivity_evidence_only": True}
+
+    def write_artifact(path, *_args, **_kwargs):
+        artifact_calls.append(path)
+        return {"path": str(path), "name": path.name, "sha256": "shared", "format": "npz-compressed", "keys": []}
+
+    original_preprocess = pcmci_real.preprocess
+    original_rolling = pcmci_real.rolling_diagnostics
+
+    def preprocess(*args):
+        preprocessing_calls.append(None)
+        return original_preprocess(*args)
+
+    def rolling(*args):
+        rolling_calls.append(None)
+        return original_rolling(*args)
+
+    monkeypatch.setattr(pcmci_real, "stationarity_qualification", qualification)
+    monkeypatch.setattr(pcmci_real, "preprocess", preprocess)
+    monkeypatch.setattr(pcmci_real, "rolling_diagnostics", rolling)
+    monkeypatch.setattr(pcmci_real.runtime, "write_npz_artifact", write_artifact)
+    monkeypatch.setattr(pcmci_real, "_run_isolated_case", lambda *_args: {"status": "succeeded"})
+
+    assert pcmci_real.run(args) == 0
+    rows = [json.loads(line) for line in output.read_text().splitlines()]
+    assert len(preprocessing_calls) == len(qualification_calls) == len(rolling_calls) == len(artifact_calls) == 1
+    assert artifact_calls[0].name == "raw_observed_daily-detrended_anomaly-rolling.npz"
+    assert len(rows) == 2
+    assert {row["rolling_diagnostics"]["sha256"] for row in rows} == {"shared"}
+    assert {json.dumps(row["stationarity_qualification"], sort_keys=True) for row in rows} == {
+        json.dumps(rows[0]["stationarity_qualification"], sort_keys=True)
+    }
 
 
 def test_run_executes_only_the_selected_gpdctorch_case(

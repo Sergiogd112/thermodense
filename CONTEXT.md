@@ -105,7 +105,7 @@ One of two pre-registered input transformations for causal discovery: the primar
 _Avoid_: treating all historical preprocessing variants as peer primary analyses; composing arbitrary unlabelled transformations
 
 **PCMCI stationarity qualification**:
-The interpretation gate applied separately to every **PCMCI preprocessing profile**. Each node is tested on its longest contiguous finite span using ADF and KPSS at a familywise 0.05 level with Holm correction across the graph's nodes; qualification requires ADF rejection of a unit root and no KPSS rejection of level stationarity for every node. Companion 365-day rolling mean and variance plots expose practical drift but do not independently pass or fail the profile. A failed profile is still computed as sensitivity evidence but cannot support a causal claim.
+The interpretation gate applied separately to every **PCMCI preprocessing profile**. Each node is tested on its longest contiguous finite span of at least 361 observations (that is, `2 * 180 + 1`), matching the production 0--180-day **Physical PCMCI lag window** and PCMCI\(^+\)'s more-than-\(2\tau_\max\) requirement. ADF and KPSS use familywise 0.05 Holm correction across the graph's nodes; qualification requires ADF rejection of a unit root and no KPSS rejection of level stationarity for every node. Companion 365-day rolling mean and variance plots expose practical drift but do not independently pass or fail the profile. A failed profile is still computed as sensitivity evidence but cannot support a causal claim.
 _Avoid_: dropping a failed robustness run; treating one uncorrected p-value or a visual rolling-window judgment as sufficient stationarity evidence
 
 **PCMCI F10.7 timing variant**:
