@@ -34,6 +34,7 @@ from thermodense.benchmarks.real_data import (
 SCHEMA_VERSION = "3"
 RUNNER_VERSION = "pcmci-real-3"
 METHODS = ("parcorr", "cmiknn", "gpdctorch")
+DEFAULT_METHODS = ("parcorr",)
 DEFERRED_METHODS = {"gpdc": "explicitly deferred for real-data PCMCI+ runs"}
 DEFAULT_TAU_MAX = 180
 DEFAULT_CMIKNN_WORKERS = 24
@@ -615,12 +616,13 @@ def run(args: argparse.Namespace) -> int:
         if args.all_sensitivity_cases
         else (sensitivity_case(args.timing_variant, args.preprocessing_profile),)
     )
-    methods = args.methods or METHODS
+    methods = args.methods or DEFAULT_METHODS
     if args.all_sensitivity_cases and "gpdctorch" in methods:
         raise ValueError("GPDCtorch sensitivity-matrix execution is not available")
     for method in methods:
         for case in cases:
-            _validate_gpdctorch_scope(method, args.tau_max, case, input_data)
+            if method == "gpdctorch":
+                _validate_gpdctorch_scope(method, args.tau_max, case, input_data)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     if args.overwrite:
         args.output.write_text("")
@@ -719,8 +721,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError(
                 "--timeout, --cmiknn-workers, and --threads must be positive; --tau-max must be non-negative."
             )
-        for method in args.methods or METHODS:
-            runtime.validate_cmiknn_tau(method, args.tau_max)
+        for method in args.methods or DEFAULT_METHODS:
+            if method == "cmiknn":
+                runtime.validate_cmiknn_tau(method, args.tau_max)
         return run(args)
     except ValueError as error:
         print(f"error: {error}", file=sys.stderr)

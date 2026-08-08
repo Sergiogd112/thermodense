@@ -424,6 +424,35 @@ def test_matrix_execution_emits_four_matching_case_rows(
     }
 
 
+@pytest.mark.parametrize("all_sensitivity_cases", [False, True])
+def test_omitted_methods_defaults_to_parcorr_without_optional_method_guards(
+    tmp_path: Path, monkeypatch, all_sensitivity_cases: bool
+) -> None:
+    input_path = tmp_path / "five_node.csv"
+    _frame().write_csv(input_path)
+    output = tmp_path / "result.jsonl"
+    argv = ["run", "--input", str(input_path), "--output", str(output), "--tau-max", "3"]
+    if all_sensitivity_cases:
+        argv.append("--all-sensitivity-cases")
+    calls = []
+
+    def fail_optional_guard(*_args, **_kwargs):
+        raise AssertionError("optional method guard was reached")
+
+    def fake_case(args, method, case, threads, artifact):
+        calls.append((method, case))
+        return {"status": "succeeded"}
+
+    monkeypatch.setattr(pcmci_real, "_validate_gpdctorch_scope", fail_optional_guard)
+    monkeypatch.setattr(pcmci_real.runtime, "validate_cmiknn_tau", fail_optional_guard)
+    monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
+
+    assert pcmci_real.main(argv) == 0
+    expected_cases = 4 if all_sensitivity_cases else 1
+    assert len(calls) == expected_cases
+    assert {method for method, _case in calls} == {"parcorr"}
+
+
 def test_gpdctorch_rejects_non_primary_and_matrix_execution(tmp_path: Path) -> None:
     input_path = tmp_path / "five_node.csv"
     _frame().write_csv(input_path)
