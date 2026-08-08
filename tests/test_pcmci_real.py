@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from datetime import date, timedelta
 import hashlib
 import json
@@ -10,6 +11,7 @@ import polars as pl
 import pytest
 
 from thermodense.benchmarks import pcmci_real
+from thermodense.benchmarks import gpdctorch_gates
 from thermodense.benchmarks.real_data import DATE_COLUMN, F107_RAW_COLUMN, NODE_COLUMNS
 
 
@@ -110,7 +112,9 @@ def test_holm_adjustment_is_boundary_correct_and_node_order_invariant() -> None:
     adjusted = pcmci_real.holm_adjusted_pvalues(p_values)
 
     assert adjusted == {"z": 0.05, "a": 0.03, "m": 0.05}
-    assert adjusted == pcmci_real.holm_adjusted_pvalues(dict(reversed(list(p_values.items()))))
+    assert adjusted == pcmci_real.holm_adjusted_pvalues(
+        dict(reversed(list(p_values.items())))
+    )
 
 
 def test_stationarity_qualification_uses_statsmodels_and_records_raw_results() -> None:
@@ -231,6 +235,206 @@ def test_registered_sensitivity_cases_reject_unregistered_combinations() -> None
         pcmci_real.sensitivity_case("raw_observed_daily", "raw_standardized")
 
 
+def test_cross_method_comparison_qualifies_without_veto_and_marks_missing_parcorr() -> (
+    None
+):
+    gpdc = [{"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": 1}]
+    missing = pcmci_real.compare_gpdctorch_with_parcorr(gpdc, None)
+    assert missing["state"] == "pending_parcorr"
+    comparison = pcmci_real.compare_gpdctorch_with_parcorr(
+        gpdc,
+        {
+            "state": "complete",
+            "primary_links": [
+                {"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": 1},
+                {"source": F107_RAW_COLUMN, "target": "co2_ppm", "lag": 2, "sign": -1},
+                {"source": F107_RAW_COLUMN, "target": "co2_ppm", "lag": 11, "sign": -1},
+            ],
+        },
+    )
+    assert [item["gpdctorch_support"] for item in comparison["comparisons"]] == [
+        "strengthens",
+        "disagrees_or_not_detected",
+    ]
+    assert all(item["vetoed"] is False for item in comparison["comparisons"])
+    assert comparison["not_a_substitute_for_parcorr_days_11_180"] is True
+    assert comparison["gpdctorch_only_method_sensitive"] == []
+
+
+def test_cross_method_comparison_reports_gpdc_only_links() -> None:
+    comparison = pcmci_real.compare_gpdctorch_with_parcorr(
+        [{"source": F107_RAW_COLUMN, "target": "ap_avg", "lag": 1, "sign": 1}],
+        {"state": "complete", "primary_links": []},
+    )
+
+    assert comparison["gpdctorch_only_method_sensitive"][0]["classification"] == (
+        "gpdctorch_only_method_sensitive"
+    )
+
+
+def test_gated_derived_retry_keeps_output_until_parcorr_is_valid(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A derived retry must not replay fits or publish before input validation."""
+    output = tmp_path / "agreement.jsonl"
+    output.write_text("existing\n")
+    input_data = pcmci_real.RealInput(
+        np.array(["2020-01-01"], dtype="datetime64[D]"),
+        np.ones((1, len(NODE_COLUMNS))),
+        {},
+        np.ones(1),
+    )
+    identity = {"accepted_quality_rows": {}}
+    state = {
+        "state": "complete",
+        "stages": {
+            name: {"identity": identity, "result": {"artifact": {}}}
+            for name in ("primary", "raw_seasonal", "centered_detrended", "interaction")
+        },
+        "derived": {
+            "status": "complete",
+            "attempts": [],
+            "source_stage_identities": {},
+            "output_agreement": {
+                "path": str(output),
+                "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            },
+        },
+    }
+    fits = []
+    monkeypatch.setattr(pcmci_real, "load_input", lambda _path: input_data)
+    monkeypatch.setattr(pcmci_real, "_gate_identity", lambda *_args: identity)
+    monkeypatch.setattr(gpdctorch_gates, "gpu_hardware", lambda: {"eligible": True})
+    monkeypatch.setattr(
+        gpdctorch_gates,
+        "run",
+        lambda *_args, **_kwargs: fits.append("run") or state,
+    )
+    monkeypatch.setattr(
+        pcmci_real,
+        "synthesize_gpdctorch_matrix",
+        lambda _rows: {"primary_links": []},
+    )
+    invalid = tmp_path / "invalid.jsonl"
+    invalid.write_text("{}\n")
+    args = argparse.Namespace(
+        input=tmp_path / "input.csv",
+        output=output,
+        state=tmp_path / "state.json",
+        threads=None,
+        row_limit=None,
+        import_capability=None,
+        retry_failed=False,
+        parcorr_agreement=invalid,
+    )
+    args.state.write_text(json.dumps(state))
+
+    assert pcmci_real.run_gpdctorch_gated(args) == 1
+    assert output.read_text() == "existing\n"
+    assert state["derived"]["status"] == "failed"
+
+    case_artifacts = []
+    for case in pcmci_real.expand_sensitivity_cases():
+        path = tmp_path / f"{case.timing_variant}-{case.preprocessing_profile}.npz"
+        nodes = pcmci_real._expected_node_order(case)
+        pcmci_real.runtime.write_npz_artifact(
+            path,
+            {
+                "graph": np.full((5, 5, 181), "", dtype="<U3"),
+                "p_matrix": np.ones((5, 5, 181)),
+                "val_matrix": np.zeros((5, 5, 181)),
+            },
+            node_names=nodes,
+        )
+        case_artifacts.append(
+            {
+                "case": pcmci_real._case_key(case),
+                "path": str(path),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        )
+    valid = tmp_path / "parcorr.jsonl"
+    valid.write_text(
+        json.dumps(
+            {
+                "state": "complete",
+                "method": "parcorr",
+                "schema_version": "1",
+                "physical_lag_window_days": {"min": 0, "max": 180},
+                "accepted_quality_rows": {},
+                "settings": {
+                    "pc_alpha": 0.05,
+                    "significance": "analytic",
+                    "threads": 1,
+                },
+                "algorithm": {
+                    "name": "PCMCI+",
+                    "entry_point": "PCMCI.run_pcmciplus",
+                    "tau_min": 0,
+                    "pc_alpha": 0.05,
+                    "contemp_collider_rule": "majority",
+                    "conflict_resolution": True,
+                    "fdr_method": "none",
+                },
+                "stationarity_eligibility": {
+                    pcmci_real._case_key(case): {
+                        "provenance_identity": {
+                            "timing_variant": case.timing_variant,
+                            "preprocessing_profile": case.preprocessing_profile,
+                            "node_order": pcmci_real._expected_node_order(case),
+                            "daily_date_sequence_sha256": None,
+                            "common_f107_support_sha256": None,
+                        }
+                    }
+                    for case in pcmci_real.expand_sensitivity_cases()
+                },
+                "case_artifacts": case_artifacts,
+                "primary_links": [],
+            }
+        )
+        + "\n"
+    )
+    args.parcorr_agreement = valid
+
+    assert pcmci_real.run_gpdctorch_gated(args) == 0
+    assert fits == ["run", "run"]
+    assert state["derived"]["status"] == "complete"
+    assert json.loads(output.read_text())["primary_links"] == []
+
+
+def test_synthesize_gpdctorch_matrix_uses_tau_ten_artifacts(tmp_path: Path) -> None:
+    rows = [
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [(0, 1, 1, "-->", 0.4)],
+        )
+        for case in pcmci_real.expand_sensitivity_cases()
+    ]
+    for row in rows:
+        row["method"] = "gpdctorch"
+        row["tau_max"] = 10
+        nodes = row["sensitivity_case"]["node_order"]
+        row["link_assumptions"] = pcmci_real._link_assumption_metadata(10, nodes)
+        artifact = Path(row["artifact"]["path"])
+        with np.load(artifact, allow_pickle=False) as saved:
+            contents = {
+                name: saved[name][..., :11] if name != "node_names" else saved[name]
+                for name in saved.files
+            }
+        np.savez_compressed(artifact, **contents)
+        row["artifact"]["sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+
+    agreement = pcmci_real.synthesize_gpdctorch_matrix(rows)
+
+    assert agreement["method"] == "gpdctorch"
+    assert agreement["physical_lag_window_days"] == {"min": 0, "max": 10}
+    assert agreement["primary_links"][0]["classification"] == "main_text_robust"
+
+
 def test_sensitivity_cases_share_exact_accepted_quality_rows() -> None:
     dates = np.arange("2020-01-01", "2020-01-06", dtype="datetime64[D]")
     values = np.ones((len(dates), len(NODE_COLUMNS)))
@@ -248,9 +452,9 @@ def test_sensitivity_cases_share_exact_accepted_quality_rows() -> None:
         prepared[0][2]["daily_date_sequence_sha256"]
     }
     assert {len(case_input.dates) for case_input, _, _ in prepared} == {5}
-    assert {metadata["common_f107_support"]["sha256"] for _, _, metadata in prepared} == {
-        prepared[0][2]["common_f107_support"]["sha256"]
-    }
+    assert {
+        metadata["common_f107_support"]["sha256"] for _, _, metadata in prepared
+    } == {prepared[0][2]["common_f107_support"]["sha256"]}
     assert prepared[0][1][0] == F107_RAW_COLUMN
     assert prepared[-1][1][0] == "f10_7_center81"
 
@@ -265,7 +469,8 @@ def test_sensitivity_input_preserves_daily_axis_and_common_f107_support() -> Non
     input_data = pcmci_real.RealInput(dates, values, {}, raw_f107)
 
     raw, _, raw_identity = pcmci_real.prepare_sensitivity_input(
-        input_data, pcmci_real.sensitivity_case("raw_observed_daily", "detrended_anomaly")
+        input_data,
+        pcmci_real.sensitivity_case("raw_observed_daily", "detrended_anomaly"),
     )
     centered, _, centered_identity = pcmci_real.prepare_sensitivity_input(
         input_data, pcmci_real.sensitivity_case("centered_81_day", "detrended_anomaly")
@@ -276,7 +481,13 @@ def test_sensitivity_input_preserves_daily_axis_and_common_f107_support() -> Non
     assert np.diff(raw.dates.astype("int64")).tolist() == [1, 1, 1, 1]
     assert len(raw.dates) == len(centered.dates) == len(dates)
     assert np.isfinite(raw.values[:, 0]).tolist() == [True, True, False, False, True]
-    assert np.isfinite(centered.values[:, 0]).tolist() == [True, True, False, False, True]
+    assert np.isfinite(centered.values[:, 0]).tolist() == [
+        True,
+        True,
+        False,
+        False,
+        True,
+    ]
     assert np.isnan(raw.values[1, 1])
     assert raw_identity == centered_identity
 
@@ -506,7 +717,12 @@ def test_run_records_atomic_npz_artifact_in_jsonl(tmp_path: Path, monkeypatch) -
     assert row["rolling_diagnostics"]["window_days"] == 365
     assert "does not alter qualification" in row["rolling_diagnostics"]["diagnostic"]
     with np.load(row["rolling_diagnostics"]["path"], allow_pickle=False) as rolling:
-        assert sorted(rolling.files) == ["dates", "node_names", "rolling_mean", "rolling_variance"]
+        assert sorted(rolling.files) == [
+            "dates",
+            "node_names",
+            "rolling_mean",
+            "rolling_variance",
+        ]
         assert rolling["node_names"].tolist() == [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
         assert rolling["rolling_mean"].shape == (20, len(NODE_COLUMNS))
         assert rolling["rolling_variance"].shape == (20, len(NODE_COLUMNS))
@@ -555,11 +771,20 @@ def test_multi_method_run_reuses_one_case_diagnostic_artifact(
 
     def qualification(*_args):
         qualification_calls.append(None)
-        return {"causal_interpretation_eligible": False, "sensitivity_evidence_only": True}
+        return {
+            "causal_interpretation_eligible": False,
+            "sensitivity_evidence_only": True,
+        }
 
     def write_artifact(path, *_args, **_kwargs):
         artifact_calls.append(path)
-        return {"path": str(path), "name": path.name, "sha256": "shared", "format": "npz-compressed", "keys": []}
+        return {
+            "path": str(path),
+            "name": path.name,
+            "sha256": "shared",
+            "format": "npz-compressed",
+            "keys": [],
+        }
 
     original_preprocess = pcmci_real.preprocess
     original_rolling = pcmci_real.rolling_diagnostics
@@ -576,20 +801,28 @@ def test_multi_method_run_reuses_one_case_diagnostic_artifact(
     monkeypatch.setattr(pcmci_real, "preprocess", preprocess)
     monkeypatch.setattr(pcmci_real, "rolling_diagnostics", rolling)
     monkeypatch.setattr(pcmci_real.runtime, "write_npz_artifact", write_artifact)
-    monkeypatch.setattr(pcmci_real, "_run_isolated_case", lambda *_args: {"status": "succeeded"})
+    monkeypatch.setattr(
+        pcmci_real, "_run_isolated_case", lambda *_args: {"status": "succeeded"}
+    )
 
     assert pcmci_real.run(args) == 0
     rows = [json.loads(line) for line in output.read_text().splitlines()]
-    assert len(preprocessing_calls) == len(qualification_calls) == len(rolling_calls) == len(artifact_calls) == 1
+    assert (
+        len(preprocessing_calls)
+        == len(qualification_calls)
+        == len(rolling_calls)
+        == len(artifact_calls)
+        == 1
+    )
     assert artifact_calls[0].name == "raw_observed_daily-detrended_anomaly-rolling.npz"
     assert len(rows) == 2
     assert {row["rolling_diagnostics"]["sha256"] for row in rows} == {"shared"}
-    assert {json.dumps(row["stationarity_qualification"], sort_keys=True) for row in rows} == {
-        json.dumps(rows[0]["stationarity_qualification"], sort_keys=True)
-    }
+    assert {
+        json.dumps(row["stationarity_qualification"], sort_keys=True) for row in rows
+    } == {json.dumps(rows[0]["stationarity_qualification"], sort_keys=True)}
 
 
-def test_run_executes_only_the_selected_gpdctorch_case(
+def test_ordinary_runner_cannot_bypass_gpdctorch_gates(
     tmp_path: Path, monkeypatch
 ) -> None:
     input_path = tmp_path / "five_node.csv"
@@ -612,23 +845,8 @@ def test_run_executes_only_the_selected_gpdctorch_case(
             "1",
         ]
     )
-    calls = []
-
-    def fake_case(args, method, case, threads, artifact):
-        calls.append((method, case, artifact))
-        return {"status": "succeeded"}
-
-    monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
-
-    assert pcmci_real.run(args) == 0
-    assert len(calls) == 1
-    method, case, artifact = calls[0]
-    assert method == "gpdctorch"
-    assert case == pcmci_real.sensitivity_case("raw_observed_daily", "detrended_anomaly")
-    assert artifact.name == "gpdctorch-raw_observed_daily-detrended_anomaly.npz"
-    row = json.loads(output.read_text())
-    assert row["sensitivity_case"]["role"] == "primary"
-    assert row["sensitivity_case"]["node_order"][0] == F107_RAW_COLUMN
+    with pytest.raises(ValueError, match="cannot execute GPDCtorch"):
+        pcmci_real.run(args)
 
 
 def test_matrix_execution_emits_four_matching_case_rows(
@@ -663,11 +881,23 @@ def test_matrix_execution_emits_four_matching_case_rows(
     rows = [json.loads(line) for line in output.read_text().splitlines()]
     assert len(rows) == len(calls) == 4
     assert len({call[2].name for call in calls}) == 4
-    assert {row["sensitivity_case"]["accepted_quality_rows"]["daily_date_sequence_sha256"] for row in rows} == {
-        rows[0]["sensitivity_case"]["accepted_quality_rows"]["daily_date_sequence_sha256"]
+    assert {
+        row["sensitivity_case"]["accepted_quality_rows"]["daily_date_sequence_sha256"]
+        for row in rows
+    } == {
+        rows[0]["sensitivity_case"]["accepted_quality_rows"][
+            "daily_date_sequence_sha256"
+        ]
     }
-    assert {row["sensitivity_case"]["accepted_quality_rows"]["common_f107_support"]["sha256"] for row in rows} == {
-        rows[0]["sensitivity_case"]["accepted_quality_rows"]["common_f107_support"]["sha256"]
+    assert {
+        row["sensitivity_case"]["accepted_quality_rows"]["common_f107_support"][
+            "sha256"
+        ]
+        for row in rows
+    } == {
+        rows[0]["sensitivity_case"]["accepted_quality_rows"]["common_f107_support"][
+            "sha256"
+        ]
     }
     assert {row["tau_max"] for row in rows} == {3}
     assert {row["missing_data_policy"]["rows_dropped"] for row in rows} == {False}
@@ -719,7 +949,9 @@ def test_production_matrix_runs_exact_parcorr_cells_and_writes_agreement(
     assert len(calls) == 4
     assert {method for method, _case in calls} == {"parcorr"}
     agreement = json.loads(
-        (tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl").read_text()
+        (
+            tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl"
+        ).read_text()
     )
     assert agreement["state"] == "complete"
     assert agreement["physical_lag_window_days"] == {"min": 0, "max": 180}
@@ -761,16 +993,27 @@ def test_production_matrix_emits_incomplete_agreement_when_a_cell_fails(
     _frame().write_csv(input_path)
     output = tmp_path / "result.jsonl"
     args = pcmci_real.parser().parse_args(
-        ["run", "--input", str(input_path), "--output", str(output), "--production-sensitivity-matrix"]
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--production-sensitivity-matrix",
+        ]
     )
     monkeypatch.setattr(
-        pcmci_real, "_run_isolated_case", lambda *_args: {"status": "failed", "failure_reason": "fixture"}
+        pcmci_real,
+        "_run_isolated_case",
+        lambda *_args: {"status": "failed", "failure_reason": "fixture"},
     )
 
     with pytest.raises(pcmci_real.MatrixSynthesisError, match="incomplete"):
         pcmci_real.run(args)
     agreement = json.loads(
-        (tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl").read_text()
+        (
+            tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl"
+        ).read_text()
     )
     assert agreement["state"] == "incomplete"
 
@@ -782,12 +1025,25 @@ def test_production_matrix_preserves_synthesis_error_after_writing_manifest(
     _frame().write_csv(input_path)
     output = tmp_path / "result.jsonl"
     args = pcmci_real.parser().parse_args(
-        ["run", "--input", str(input_path), "--output", str(output), "--production-sensitivity-matrix"]
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--production-sensitivity-matrix",
+        ]
     )
     synthesis_error = pcmci_real.MatrixSynthesisError("synthesis failure")
-    monkeypatch.setattr(pcmci_real, "synthesize_parcorr_matrix", lambda *_args: (_ for _ in ()).throw(synthesis_error))
     monkeypatch.setattr(
-        pcmci_real, "_run_isolated_case", lambda *_args: {"status": "success", "failure_reason": None}
+        pcmci_real,
+        "synthesize_parcorr_matrix",
+        lambda *_args: (_ for _ in ()).throw(synthesis_error),
+    )
+    monkeypatch.setattr(
+        pcmci_real,
+        "_run_isolated_case",
+        lambda *_args: {"status": "success", "failure_reason": None},
     )
 
     with pytest.raises(pcmci_real.MatrixSynthesisError) as raised:
@@ -795,7 +1051,9 @@ def test_production_matrix_preserves_synthesis_error_after_writing_manifest(
 
     assert raised.value is synthesis_error
     manifest = json.loads(
-        (tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl").read_text()
+        (
+            tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl"
+        ).read_text()
     )
     assert manifest["state"] == "incomplete"
     assert manifest["error"] == "synthesis failure"
@@ -808,18 +1066,31 @@ def test_production_matrix_records_parent_preparation_failure(
     _frame().write_csv(input_path)
     output = tmp_path / "result.jsonl"
     args = pcmci_real.parser().parse_args(
-        ["run", "--input", str(input_path), "--output", str(output), "--production-sensitivity-matrix"]
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--production-sensitivity-matrix",
+        ]
     )
     monkeypatch.setattr(
         pcmci_real,
         "prepare_case_diagnostics",
-        lambda *_args: (_ for _ in ()).throw(OSError("rolling artifact fixture failure")),
+        lambda *_args: (_ for _ in ()).throw(
+            OSError("rolling artifact fixture failure")
+        ),
     )
 
-    with pytest.raises(pcmci_real.MatrixSynthesisError, match="rolling artifact fixture failure"):
+    with pytest.raises(
+        pcmci_real.MatrixSynthesisError, match="rolling artifact fixture failure"
+    ):
         pcmci_real.run(args)
     manifest = json.loads(
-        (tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl").read_text()
+        (
+            tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl"
+        ).read_text()
     )
     assert manifest["state"] == "incomplete"
     assert manifest["current_case"] == "raw_observed_daily/detrended_anomaly"
@@ -834,32 +1105,55 @@ def test_production_matrix_writes_incomplete_manifest_for_input_failures(
     if missing_raw:
         _frame().drop(F107_RAW_COLUMN).write_csv(input_path)
     args = pcmci_real.parser().parse_args(
-        ["run", "--input", str(input_path), "--output", str(tmp_path / "result.jsonl"), "--production-sensitivity-matrix"]
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(tmp_path / "result.jsonl"),
+            "--production-sensitivity-matrix",
+        ]
     )
 
     with pytest.raises(pcmci_real.MatrixSynthesisError, match="incomplete matrix"):
         pcmci_real.run(args)
     manifest = json.loads(
-        (tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl").read_text()
+        (
+            tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl"
+        ).read_text()
     )
     assert manifest["state"] == "incomplete"
 
 
-def test_production_matrix_overwrite_cleans_stale_artifacts_before_input_load(tmp_path: Path) -> None:
+def test_production_matrix_overwrite_cleans_stale_artifacts_before_input_load(
+    tmp_path: Path,
+) -> None:
     output = tmp_path / "result.jsonl"
     artifact_directory = tmp_path / "result_artifacts"
     artifact_directory.mkdir()
     (artifact_directory / "stale.npz").write_text("stale")
     args = pcmci_real.parser().parse_args(
-        ["run", "--input", str(tmp_path / "missing.csv"), "--output", str(output),
-         "--production-sensitivity-matrix", "--overwrite"]
+        [
+            "run",
+            "--input",
+            str(tmp_path / "missing.csv"),
+            "--output",
+            str(output),
+            "--production-sensitivity-matrix",
+            "--overwrite",
+        ]
     )
 
     with pytest.raises(pcmci_real.MatrixSynthesisError, match="incomplete matrix"):
         pcmci_real.run(args)
 
     assert not (artifact_directory / "stale.npz").exists()
-    assert json.loads((artifact_directory / "parcorr-sensitivity-agreement.jsonl").read_text())["state"] == "incomplete"
+    assert (
+        json.loads(
+            (artifact_directory / "parcorr-sensitivity-agreement.jsonl").read_text()
+        )["state"]
+        == "incomplete"
+    )
 
 
 @pytest.mark.parametrize("all_sensitivity_cases", [False, True])
@@ -869,7 +1163,15 @@ def test_omitted_methods_defaults_to_parcorr_without_optional_method_guards(
     input_path = tmp_path / "five_node.csv"
     _frame().write_csv(input_path)
     output = tmp_path / "result.jsonl"
-    argv = ["run", "--input", str(input_path), "--output", str(output), "--tau-max", "3"]
+    argv = [
+        "run",
+        "--input",
+        str(input_path),
+        "--output",
+        str(output),
+        "--tau-max",
+        "3",
+    ]
     if all_sensitivity_cases:
         argv.append("--all-sensitivity-cases")
     calls = []
@@ -909,7 +1211,7 @@ def test_gpdctorch_rejects_non_primary_and_matrix_execution(tmp_path: Path) -> N
             "centered_81_day",
         ]
     )
-    with pytest.raises(ValueError, match="only the primary"):
+    with pytest.raises(ValueError, match="cannot execute GPDCtorch"):
         pcmci_real.run(non_primary)
 
     matrix = pcmci_real.parser().parse_args(
@@ -924,7 +1226,7 @@ def test_gpdctorch_rejects_non_primary_and_matrix_execution(tmp_path: Path) -> N
             "--all-sensitivity-cases",
         ]
     )
-    with pytest.raises(ValueError, match="sensitivity-matrix"):
+    with pytest.raises(ValueError, match="cannot execute GPDCtorch"):
         pcmci_real.run(matrix)
 
     primary_tau_10 = pcmci_real.parser().parse_args(
@@ -940,7 +1242,7 @@ def test_gpdctorch_rejects_non_primary_and_matrix_execution(tmp_path: Path) -> N
             "10",
         ]
     )
-    with pytest.raises(ValueError, match="tau_max=1"):
+    with pytest.raises(ValueError, match="cannot execute GPDCtorch"):
         pcmci_real.run(primary_tau_10)
 
     row_limited = pcmci_real.parser().parse_args(
@@ -958,7 +1260,7 @@ def test_gpdctorch_rejects_non_primary_and_matrix_execution(tmp_path: Path) -> N
             "1",
         ]
     )
-    with pytest.raises(ValueError, match="row-limited or prefix"):
+    with pytest.raises(ValueError, match="cannot execute GPDCtorch"):
         pcmci_real.run(row_limited)
 
 
@@ -968,13 +1270,45 @@ def test_gpdctorch_direct_run_accepts_only_primary_tau_one(monkeypatch) -> None:
         np.ones((19, len(NODE_COLUMNS))),
         {},
     )
-    monkeypatch.setattr(pcmci_real, "prepare_sensitivity_input", lambda data, case: (data, list(NODE_COLUMNS), {}))
+    monkeypatch.setattr(
+        pcmci_real,
+        "prepare_sensitivity_input",
+        lambda data, case: (data, list(NODE_COLUMNS), {}),
+    )
     with pytest.raises(ValueError, match="tau_max=1"):
         pcmci_real.run_pcmciplus(input_data, "gpdctorch", tau_max=10, cmiknn_workers=1)
 
     input_data.metadata["row_limit"] = 10
     with pytest.raises(ValueError, match="row-limited or prefix"):
         pcmci_real.run_pcmciplus(input_data, "gpdctorch", tau_max=1, cmiknn_workers=1)
+
+
+@pytest.mark.parametrize(
+    "timing, profile, tau",
+    [
+        (pcmci_real.RAW_OBSERVED_DAILY, pcmci_real.DETRENDED_ANOMALY, 10),
+        (pcmci_real.RAW_OBSERVED_DAILY, pcmci_real.SEASONAL_ANOMALY, 10),
+        (pcmci_real.CENTERED_81_DAY, pcmci_real.DETRENDED_ANOMALY, 10),
+        (pcmci_real.CENTERED_81_DAY, pcmci_real.SEASONAL_ANOMALY, 10),
+    ],
+)
+def test_public_gpdctorch_api_cannot_unlock_gated_tau_ten(
+    timing: str, profile: str, tau: int
+) -> None:
+    input_data = pcmci_real.RealInput(
+        np.arange("2020-01-01", "2020-02-20", dtype="datetime64[D]"),
+        np.ones((50, len(NODE_COLUMNS))),
+        {},
+        np.ones(50),
+    )
+    with pytest.raises(ValueError, match="outside the validated gate|only the primary"):
+        pcmci_real.run_pcmciplus(
+            input_data,
+            "gpdctorch",
+            tau,
+            1,
+            case=pcmci_real.sensitivity_case(timing, profile),
+        )
 
 
 def test_run_refuses_to_overwrite_existing_artifacts(tmp_path: Path) -> None:
@@ -1095,7 +1429,12 @@ def test_synthesize_parcorr_matrix_classifies_agreement_and_exploration(
             tmp_path,
             raw_seasonal,
             raw_nodes,
-            [(0, 1, 1, "-->", 0.4), (0, 3, 1, "-->", 0.2), (0, 0, 3, "-->", 0.1), (0, 1, 2, "-->", 0.5)],
+            [
+                (0, 1, 1, "-->", 0.4),
+                (0, 3, 1, "-->", 0.2),
+                (0, 0, 3, "-->", 0.1),
+                (0, 1, 2, "-->", 0.5),
+            ],
         ),
         _matrix_row(
             tmp_path,
@@ -1114,20 +1453,25 @@ def test_synthesize_parcorr_matrix_classifies_agreement_and_exploration(
     assert links["ap_avg"]["centered_delay_equivalent"] is False
     assert links["co2_ppm"]["failed_dimensions"] == ["detrending"]
     assert links["log10rho_325_daily_mean"]["failed_dimensions"] == ["timing"]
-    assert links["log10rho_825_daily_mean"]["failed_dimensions"] == ["detrending", "timing"]
-    self_lag = next(link for link in agreement["primary_links"] if link["target"] == F107_RAW_COLUMN)
+    assert links["log10rho_825_daily_mean"]["failed_dimensions"] == [
+        "detrending",
+        "timing",
+    ]
+    self_lag = next(
+        link for link in agreement["primary_links"] if link["target"] == F107_RAW_COLUMN
+    )
     assert self_lag["classification"] == "main_text_robust"
     assert self_lag["centered_matches"][0]["lag"] == 4
     assert {
         (link["source"], link["target"], link["lag"], tuple(link["source_cells"]))
         for link in agreement["exploratory_links"]
-    } >= {
-        (F107_RAW_COLUMN, "ap_avg", 2, ("raw_observed_daily/seasonal_anomaly",))
-    }
+    } >= {(F107_RAW_COLUMN, "ap_avg", 2, ("raw_observed_daily/seasonal_anomaly",))}
     exploratory = next(
         link
         for link in agreement["exploratory_links"]
-        if link["source"] == F107_RAW_COLUMN and link["target"] == "ap_avg" and link["lag"] == 2
+        if link["source"] == F107_RAW_COLUMN
+        and link["target"] == "ap_avg"
+        and link["lag"] == 2
     )
     assert exploratory["evidence"] == [
         {
@@ -1141,9 +1485,14 @@ def test_synthesize_parcorr_matrix_classifies_agreement_and_exploration(
             "graph_mark": "-->",
         }
     ]
-    assert agreement["interaction_diagnostic_links"][0]["target"] == "log10rho_325_daily_mean"
+    assert (
+        agreement["interaction_diagnostic_links"][0]["target"]
+        == "log10rho_325_daily_mean"
+    )
     assert not any(
-        link["source"] == "f10_7_center81" and link["target"] == "ap_avg" and link["lag"] == 2
+        link["source"] == "f10_7_center81"
+        and link["target"] == "ap_avg"
+        and link["lag"] == 2
         for link in agreement["exploratory_links"]
     )
     assert len(agreement["case_artifacts"]) == 4
@@ -1161,7 +1510,9 @@ def test_synthesis_keeps_sign_mismatch_and_deduplicates_contemporaneous_orientat
     rows = [
         _matrix_row(tmp_path, primary, raw_nodes, primary_links),
         _matrix_row(tmp_path, raw_seasonal, raw_nodes, [(0, 1, 0, "-->", -0.4)]),
-        _matrix_row(tmp_path, centered_detrended, centered_nodes, [(0, 1, 2, "-->", 0.4)]),
+        _matrix_row(
+            tmp_path, centered_detrended, centered_nodes, [(0, 1, 2, "-->", 0.4)]
+        ),
         _matrix_row(tmp_path, interaction, centered_nodes, [(0, 1, 0, "-->", 0.4)]),
     ]
 
@@ -1181,7 +1532,10 @@ def test_synthesis_keeps_sign_mismatch_and_deduplicates_contemporaneous_orientat
         (lambda rows: rows[0].update(method="cmiknn"), "method"),
         (lambda rows: rows[0].update(tau_max=10), "tau_max"),
         (lambda rows: rows[0]["settings"].update(threads=2), "settings"),
-        (lambda rows: rows[0]["sensitivity_case"].update(node_order=["wrong"]), "provenance"),
+        (
+            lambda rows: rows[0]["sensitivity_case"].update(node_order=["wrong"]),
+            "provenance",
+        ),
         (
             lambda rows: rows[0]["sensitivity_case"]["accepted_quality_rows"].update(
                 daily_date_sequence_sha256="other"
@@ -1198,7 +1552,9 @@ def test_synthesis_rejects_incomplete_or_mixed_matrix_identities(
         _matrix_row(
             tmp_path,
             case,
-            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else NODE_COLUMNS,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
             [],
         )
         for case in cases
@@ -1241,14 +1597,18 @@ def test_synthesis_rejects_invalid_matrix_row_identity(
         pcmci_real.synthesize_parcorr_matrix(rows)
 
 
-def test_synthesis_omits_partial_and_conflicting_marks_with_diagnostics(tmp_path: Path) -> None:
+def test_synthesis_omits_partial_and_conflicting_marks_with_diagnostics(
+    tmp_path: Path,
+) -> None:
     primary, raw_seasonal, centered_detrended, interaction = (
         pcmci_real.expand_sensitivity_cases()
     )
     raw_nodes = [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
     centered_nodes = NODE_COLUMNS
     rows = [
-        _matrix_row(tmp_path, primary, raw_nodes, [(0, 1, 1, "o->", 0.4), (0, 1, 2, "x-x", 0.4)]),
+        _matrix_row(
+            tmp_path, primary, raw_nodes, [(0, 1, 1, "o->", 0.4), (0, 1, 2, "x-x", 0.4)]
+        ),
         _matrix_row(tmp_path, raw_seasonal, raw_nodes, []),
         _matrix_row(tmp_path, centered_detrended, centered_nodes, []),
         _matrix_row(tmp_path, interaction, centered_nodes, []),
@@ -1257,7 +1617,9 @@ def test_synthesis_omits_partial_and_conflicting_marks_with_diagnostics(tmp_path
     agreement = pcmci_real.synthesize_parcorr_matrix(rows)
 
     assert agreement["primary_links"] == []
-    assert agreement["orientation_diagnostics"]["raw_observed_daily/detrended_anomaly"] == {
+    assert agreement["orientation_diagnostics"][
+        "raw_observed_daily/detrended_anomaly"
+    ] == {
         "partially_oriented_count": 1,
         "conflict_count": 1,
     }
@@ -1286,7 +1648,9 @@ def test_synthesis_rejects_artifact_and_provenance_integrity_failures(
         _matrix_row(
             tmp_path,
             case,
-            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else NODE_COLUMNS,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
             [(0, 1, 1, "-->", 0.4)],
         )
         for case in cases
@@ -1297,9 +1661,14 @@ def test_synthesis_rejects_artifact_and_provenance_integrity_failures(
         artifact.write_bytes(artifact.read_bytes() + b"stale")
     elif mutation == "mixed_normalized_nodes":
         rows[2]["sensitivity_case"]["node_order"] = ["different", "density"]
-        rows[2]["stationarity_qualification"]["provenance_identity"]["node_order"] = ["different", "density"]
+        rows[2]["stationarity_qualification"]["provenance_identity"]["node_order"] = [
+            "different",
+            "density",
+        ]
     elif mutation == "stationarity_identity":
-        row["stationarity_qualification"]["provenance_identity"]["daily_date_sequence_sha256"] = "wrong"
+        row["stationarity_qualification"]["provenance_identity"][
+            "daily_date_sequence_sha256"
+        ] = "wrong"
     else:
         with np.load(artifact, allow_pickle=False) as saved:
             contents = {name: saved[name] for name in saved.files}
@@ -1330,38 +1699,57 @@ def test_synthesis_converts_malformed_rows_to_controlled_errors() -> None:
         pcmci_real.synthesize_parcorr_matrix([{"sensitivity_case": None}])
 
 
-def test_synthesis_rejects_stationarity_top_level_eligibility_mismatch(tmp_path: Path) -> None:
+def test_synthesis_rejects_stationarity_top_level_eligibility_mismatch(
+    tmp_path: Path,
+) -> None:
     cases = pcmci_real.expand_sensitivity_cases()
     rows = [
         _matrix_row(
             tmp_path,
             case,
-            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else NODE_COLUMNS,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
             [],
         )
         for case in cases
     ]
     rows[0]["causal_interpretation_eligible"] = False
 
-    with pytest.raises(pcmci_real.MatrixSynthesisError, match="stationarity eligibility"):
+    with pytest.raises(
+        pcmci_real.MatrixSynthesisError, match="stationarity eligibility"
+    ):
         pcmci_real.synthesize_parcorr_matrix(rows)
 
 
 @pytest.mark.parametrize(
     "mutation",
     [
-        lambda row: row["stationarity_qualification"].pop("causal_interpretation_eligible"),
-        lambda row: row["stationarity_qualification"].update(causal_interpretation_eligible="yes"),
+        lambda row: row["stationarity_qualification"].pop(
+            "causal_interpretation_eligible"
+        ),
+        lambda row: row["stationarity_qualification"].update(
+            causal_interpretation_eligible="yes"
+        ),
         lambda row: row.update(sensitivity_evidence_only=True),
-        lambda row: row["stationarity_qualification"].update(sensitivity_evidence_only=True),
+        lambda row: row["stationarity_qualification"].update(
+            sensitivity_evidence_only=True
+        ),
     ],
 )
-def test_synthesis_rejects_malformed_or_noncomplementary_stationarity_flags(tmp_path: Path, mutation) -> None:
+def test_synthesis_rejects_malformed_or_noncomplementary_stationarity_flags(
+    tmp_path: Path, mutation
+) -> None:
     cases = pcmci_real.expand_sensitivity_cases()
     rows = [
-        _matrix_row(tmp_path, case,
-                    [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else NODE_COLUMNS,
-                    [])
+        _matrix_row(
+            tmp_path,
+            case,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [],
+        )
         for case in cases
     ]
     mutation(rows[0])
@@ -1378,12 +1766,24 @@ def test_agreeing_links_are_stationarity_limited_by_required_cells(
         _matrix_row(
             tmp_path,
             case,
-            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else NODE_COLUMNS,
-            [(0, 1, 1 if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else 2, "-->", 0.4)],
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
+            [
+                (
+                    0,
+                    1,
+                    1 if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else 2,
+                    "-->",
+                    0.4,
+                )
+            ],
         )
         for case in cases
     ]
-    rows[failed_index]["stationarity_qualification"]["causal_interpretation_eligible"] = False
+    rows[failed_index]["stationarity_qualification"][
+        "causal_interpretation_eligible"
+    ] = False
     rows[failed_index]["stationarity_qualification"]["sensitivity_evidence_only"] = True
     rows[failed_index]["causal_interpretation_eligible"] = False
     rows[failed_index]["sensitivity_evidence_only"] = True
@@ -1392,16 +1792,26 @@ def test_agreeing_links_are_stationarity_limited_by_required_cells(
 
     link = agreement["primary_links"][0]
     assert link["classification"] == "stationarity_limited"
-    assert link["failed_stationarity_cells"] == [
-        "raw_observed_daily/detrended_anomaly",
-        "raw_observed_daily/seasonal_anomaly",
-        "centered_81_day/detrended_anomaly",
-    ][failed_index:failed_index + 1]
+    assert (
+        link["failed_stationarity_cells"]
+        == [
+            "raw_observed_daily/detrended_anomaly",
+            "raw_observed_daily/seasonal_anomaly",
+            "centered_81_day/detrended_anomaly",
+        ][failed_index : failed_index + 1]
+    )
 
 
 @pytest.mark.parametrize(
     "mutation",
-    ["node_order", "accepted_rows", "missing_policy", "algorithm", "assumptions", "settings"],
+    [
+        "node_order",
+        "accepted_rows",
+        "missing_policy",
+        "algorithm",
+        "assumptions",
+        "settings",
+    ],
 )
 def test_synthesis_rejects_identically_malformed_production_schema_rows(
     tmp_path: Path, mutation: str
@@ -1411,15 +1821,21 @@ def test_synthesis_rejects_identically_malformed_production_schema_rows(
         _matrix_row(
             tmp_path,
             case,
-            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]] if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY else NODE_COLUMNS,
+            [F107_RAW_COLUMN, *NODE_COLUMNS[1:]]
+            if case.timing_variant == pcmci_real.RAW_OBSERVED_DAILY
+            else NODE_COLUMNS,
             [],
         )
         for case in cases
     ]
     for row in rows:
         if mutation == "node_order":
-            row["sensitivity_case"]["node_order"] = list(reversed(row["sensitivity_case"]["node_order"]))
-            row["stationarity_qualification"]["provenance_identity"]["node_order"] = row["sensitivity_case"]["node_order"]
+            row["sensitivity_case"]["node_order"] = list(
+                reversed(row["sensitivity_case"]["node_order"])
+            )
+            row["stationarity_qualification"]["provenance_identity"]["node_order"] = (
+                row["sensitivity_case"]["node_order"]
+            )
         elif mutation == "accepted_rows":
             row["sensitivity_case"]["accepted_quality_rows"]["row_count"] = 0
         elif mutation == "missing_policy":
