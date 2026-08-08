@@ -1342,6 +1342,8 @@ def run(args: argparse.Namespace) -> int:
             else MatrixSynthesisError(f"incomplete matrix: {type(error).__name__}: {error}")
         )
         _write_incomplete_matrix_manifest(agreement_path, controlled, current_case, rows)
+        if isinstance(error, MatrixSynthesisError):
+            raise error
         raise controlled from error
     print(f"{args.output} {json.dumps(summary, sort_keys=True)}")
     return 0

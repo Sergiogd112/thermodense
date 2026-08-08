@@ -775,6 +775,32 @@ def test_production_matrix_emits_incomplete_agreement_when_a_cell_fails(
     assert agreement["state"] == "incomplete"
 
 
+def test_production_matrix_preserves_synthesis_error_after_writing_manifest(
+    tmp_path: Path, monkeypatch
+) -> None:
+    input_path = tmp_path / "five_node.csv"
+    _frame().write_csv(input_path)
+    output = tmp_path / "result.jsonl"
+    args = pcmci_real.parser().parse_args(
+        ["run", "--input", str(input_path), "--output", str(output), "--production-sensitivity-matrix"]
+    )
+    synthesis_error = pcmci_real.MatrixSynthesisError("synthesis failure")
+    monkeypatch.setattr(pcmci_real, "synthesize_parcorr_matrix", lambda *_args: (_ for _ in ()).throw(synthesis_error))
+    monkeypatch.setattr(
+        pcmci_real, "_run_isolated_case", lambda *_args: {"status": "success", "failure_reason": None}
+    )
+
+    with pytest.raises(pcmci_real.MatrixSynthesisError) as raised:
+        pcmci_real.run(args)
+
+    assert raised.value is synthesis_error
+    manifest = json.loads(
+        (tmp_path / "result_artifacts" / "parcorr-sensitivity-agreement.jsonl").read_text()
+    )
+    assert manifest["state"] == "incomplete"
+    assert manifest["error"] == "synthesis failure"
+
+
 def test_production_matrix_records_parent_preparation_failure(
     tmp_path: Path, monkeypatch
 ) -> None:
