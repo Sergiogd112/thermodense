@@ -162,6 +162,7 @@ def package_versions() -> dict[str, str]:
     for package in (
         "numpy",
         "scipy",
+        "statsmodels",
         "tigramite",
         "scikit-learn",
         "numba",

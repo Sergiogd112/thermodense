@@ -17,7 +17,8 @@ import resource
 import shutil
 import sys
 import time
-from typing import Any, Literal
+from typing import Any, Literal, cast
+import warnings
 
 import numpy as np
 import polars as pl
@@ -31,8 +32,8 @@ from thermodense.benchmarks.real_data import (
     NODE_COLUMNS,
 )
 
-SCHEMA_VERSION = "3"
-RUNNER_VERSION = "pcmci-real-3"
+SCHEMA_VERSION = "4"
+RUNNER_VERSION = "pcmci-real-4"
 METHODS = ("parcorr", "cmiknn", "gpdctorch")
 DEFAULT_METHODS = ("parcorr",)
 DEFERRED_METHODS = {"gpdc": "explicitly deferred for real-data PCMCI+ runs"}
@@ -41,6 +42,8 @@ DEFAULT_CMIKNN_WORKERS = 24
 MISSING_FLAG = -999999.0
 SEED = 20260802
 ROLLING_WINDOW = 1095
+STATIONARITY_ALPHA = 0.05
+MIN_STATIONARITY_SAMPLES = 2 * DEFAULT_TAU_MAX + 1
 
 RAW_OBSERVED_DAILY = "raw_observed_daily"
 CENTERED_81_DAY = "centered_81_day"
@@ -113,6 +116,199 @@ def rolling_nanmean(values: np.ndarray, window: int) -> np.ndarray:
         out=np.full_like(values, np.nan),
         where=denominator > 0,
     )
+
+
+def rolling_nanvar(values: np.ndarray, window: int) -> np.ndarray:
+    """Centered rolling population variance that ignores missing window samples."""
+    values = np.asarray(values, dtype=float)
+    mean = rolling_nanmean(values, window)
+    squared_mean = rolling_nanmean(np.square(values), window)
+    return np.maximum(squared_mean - np.square(mean), 0.0)
+
+
+def longest_contiguous_finite_span(values: np.ndarray) -> tuple[int, int] | None:
+    """Return half-open bounds for the longest contiguous finite span."""
+    finite = np.isfinite(np.asarray(values, dtype=float))
+    best: tuple[int, int] | None = None
+    start = 0
+    while start < len(finite):
+        if not finite[start]:
+            start += 1
+            continue
+        end = start + 1
+        while end < len(finite) and finite[end]:
+            end += 1
+        if best is None or end - start > best[1] - best[0]:
+            best = (start, end)
+        start = end
+    return best
+
+
+def holm_adjusted_pvalues(p_values: dict[str, float]) -> dict[str, float]:
+    """Return deterministic Holm familywise adjusted p-values by node name."""
+    ordered = sorted(p_values.items(), key=lambda item: (item[1], item[0]))
+    adjusted: dict[str, float] = {}
+    previous = 0.0
+    family_size = len(ordered)
+    for rank, (node, p_value) in enumerate(ordered):
+        previous = max(previous, min(1.0, (family_size - rank) * p_value))
+        adjusted[node] = previous
+    return adjusted
+
+
+def _adf(values: np.ndarray) -> dict[str, Any]:
+    from statsmodels.tsa.stattools import adfuller
+
+    statistic, p_value, used_lag, observations, critical_values, icbest = cast(
+        tuple[float, float, int, int, dict[str, float], float],
+        adfuller(values, regression="c", autolag="AIC"),
+    )
+    return {
+        "statistic": float(statistic),
+        "p_value": float(p_value),
+        "used_lag": int(used_lag),
+        "observations": int(observations),
+        "critical_values": {key: float(value) for key, value in critical_values.items()},
+        "information_criterion": float(icbest),
+    }
+
+
+def _kpss(values: np.ndarray) -> dict[str, Any]:
+    from statsmodels.tsa.stattools import kpss
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        statistic, p_value, lags, critical_values = kpss(
+            values, regression="c", nlags="auto"
+        )
+    result: dict[str, Any] = {
+        "statistic": float(statistic),
+        "p_value": float(p_value),
+        "used_lag": int(lags),
+        "critical_values": {key: float(value) for key, value in critical_values.items()},
+    }
+    if captured:
+        result["warnings"] = [str(warning.message) for warning in captured]
+    return result
+
+
+def stationarity_qualification(
+    values: np.ndarray,
+    dates: np.ndarray,
+    node_names: list[str],
+    *,
+    adf: Any = _adf,
+    kpss: Any = _kpss,
+) -> dict[str, Any]:
+    """Qualify a PCMCI preprocessing profile using ADF and KPSS with Holm control."""
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 2 or values.shape != (len(dates), len(node_names)):
+        raise ValueError("stationarity values, dates, and node_names must align")
+    nodes: dict[str, dict[str, Any]] = {}
+    raw_p_values: dict[str, dict[str, float]] = {"adf": {}, "kpss": {}}
+    for index, node in enumerate(node_names):
+        span = longest_contiguous_finite_span(values[:, index])
+        if span is None:
+            nodes[node] = {"sample_count": 0, "span": None, "outcome": "not_qualified_missing_span"}
+            continue
+        start, end = span
+        node_result: dict[str, Any] = {
+            "sample_count": end - start,
+            "span": {
+                "start": str(dates[start]),
+                "end": str(dates[end - 1]),
+                "start_index": start,
+                "end_index": end - 1,
+            },
+        }
+        if end - start < MIN_STATIONARITY_SAMPLES:
+            nodes[node] = node_result | {"outcome": "not_qualified_too_short_span"}
+            continue
+        span_values = values[start:end, index]
+        for family, test in (("adf", adf), ("kpss", kpss)):
+            try:
+                test_result = dict(test(span_values))
+                p_value = float(test_result["p_value"])
+                if not np.isfinite(p_value) or not 0.0 <= p_value <= 1.0:
+                    raise ValueError("returned p_value must be finite and in [0, 1]")
+            except (KeyError, TypeError, ValueError, np.linalg.LinAlgError) as error:
+                node_result[family] = {
+                    "outcome": "test_error",
+                    "error": f"{type(error).__name__}: {error}",
+                }
+            else:
+                node_result[family] = test_result
+                raw_p_values[family][node] = p_value
+        nodes[node] = node_result
+
+    families: dict[str, dict[str, Any]] = {}
+    for family, null, reject_outcome, retain_outcome in (
+        ("adf", "unit_root", "reject_unit_root", "does_not_reject_unit_root"),
+        ("kpss", "level_stationarity", "reject_level_stationarity", "do_not_reject_level_stationarity"),
+    ):
+        unavailable = sorted(set(node_names) - set(raw_p_values[family]))
+        adjusted = holm_adjusted_pvalues(raw_p_values[family] | {node: 1.0 for node in unavailable})
+        for node, p_value in raw_p_values[family].items():
+            reject = adjusted[node] <= STATIONARITY_ALPHA
+            nodes[node][family].update(
+                raw_p_value=p_value,
+                adjusted_p_value=adjusted[node],
+                null_hypothesis=null,
+                alternative_hypothesis=("stationary" if family == "adf" else "not_level_stationary"),
+                reject_null=reject,
+                outcome=reject_outcome if reject else retain_outcome,
+            )
+        families[family] = {
+            "family_size": len(node_names),
+            "tested_nodes": sorted(raw_p_values[family]),
+            "unavailable_nodes": unavailable,
+            "unavailable_node_policy": "unavailable nodes occupy full-family membership with p=1; they remain unqualified",
+            "adjusted_p_values": {node: adjusted[node] for node in sorted(raw_p_values[family])},
+        }
+    for node in node_names:
+        result = nodes[node]
+        if "reject_null" in result.get("adf", {}) and "reject_null" in result.get("kpss", {}):
+            result["outcome"] = (
+                "qualified"
+                if result["adf"]["reject_null"] and not result["kpss"]["reject_null"]
+                else "not_qualified_stationarity_test"
+            )
+        elif "adf" in result or "kpss" in result:
+            result["outcome"] = "not_qualified_test_error"
+    qualified = all(nodes[node]["outcome"] == "qualified" for node in node_names)
+    return {
+        "method": "ADF and KPSS stationarity qualification",
+        "familywise_alpha": STATIONARITY_ALPHA,
+        "multiple_testing": "Holm separately across the full graph-node family for each test family",
+        "settings": {
+            "adf": {"regression": "c", "autolag": "AIC", "null_hypothesis": "unit_root"},
+            "kpss": {"regression": "c", "nlags": "auto", "null_hypothesis": "level_stationarity"},
+            "minimum_samples": MIN_STATIONARITY_SAMPLES,
+            "minimum_samples_justification": "2 * DEFAULT_TAU_MAX + 1, compatible with the production 0-180-day physical lag window and PCMCI+ requirement for more than 2*tau_max rows",
+        },
+        "test_families": families,
+        "nodes": nodes,
+        "causal_interpretation_eligible": qualified,
+        "sensitivity_evidence_only": not qualified,
+        "ineligibility_reason": (
+            None
+            if qualified
+            else "one or more graph nodes did not meet PCMCI stationarity qualification"
+        ),
+    }
+
+
+def rolling_diagnostics(values: np.ndarray) -> dict[str, np.ndarray]:
+    """Return companion 365-day practical-drift diagnostics without qualification use."""
+    values = np.asarray(values, dtype=float)
+    return {
+        "rolling_mean": np.column_stack(
+            [rolling_nanmean(values[:, index], 365) for index in range(values.shape[1])]
+        ),
+        "rolling_variance": np.column_stack(
+            [rolling_nanvar(values[:, index], 365) for index in range(values.shape[1])]
+        ),
+    }
 
 
 def finite_standardize(values: np.ndarray) -> np.ndarray:
@@ -529,14 +725,56 @@ def _run_isolated_case(
     return runtime.run_isolated_process(command, args.timeout, threads)
 
 
+def prepare_case_diagnostics(
+    input_data: RealInput,
+    case: SensitivityCase,
+    artifact_directory: Path,
+) -> dict[str, Any]:
+    """Prepare immutable, method-independent diagnostics once for one case."""
+    prepared_input, node_names, accepted_rows = prepare_sensitivity_input(input_data, case)
+    transformed = preprocess(
+        prepared_input.values, prepared_input.dates, case.preprocessing_profile
+    )
+    qualification = stationarity_qualification(
+        transformed, prepared_input.dates, node_names
+    )
+    qualification["provenance_identity"] = {
+        "timing_variant": case.timing_variant,
+        "preprocessing_profile": case.preprocessing_profile,
+        "node_order": node_names,
+        "daily_date_sequence_sha256": accepted_rows["daily_date_sequence_sha256"],
+        "common_f107_support_sha256": accepted_rows["common_f107_support"]["sha256"],
+    }
+    rolling = rolling_diagnostics(transformed)
+    rolling_artifact = runtime.write_npz_artifact(
+        artifact_directory
+        / f"{case.timing_variant}-{case.preprocessing_profile}-rolling.npz",
+        {"dates": prepared_input.dates, **rolling},
+        node_names=node_names,
+    )
+    rolling_artifact["diagnostic"] = "365-day rolling mean and variance; does not alter qualification"
+    rolling_artifact["window_days"] = 365
+    return {
+        "input": prepared_input,
+        "node_names": node_names,
+        "accepted_rows": accepted_rows,
+        "stationarity_qualification": qualification,
+        "rolling_diagnostics": rolling_artifact,
+    }
+
+
 def _base_row(
     args: argparse.Namespace,
     method: str,
-    input_data: RealInput,
     case: SensitivityCase,
     threads: int,
+    case_diagnostics: dict[str, Any],
 ) -> dict[str, Any]:
-    prepared_input, node_names, accepted_rows = prepare_sensitivity_input(input_data, case)
+    prepared_input = case_diagnostics["input"]
+    node_names = case_diagnostics["node_names"]
+    accepted_rows = case_diagnostics["accepted_rows"]
+    qualification = case_diagnostics["stationarity_qualification"]
+    rolling_artifact = case_diagnostics["rolling_diagnostics"]
     return {
         "schema_version": SCHEMA_VERSION,
         "runner_version": RUNNER_VERSION,
@@ -573,6 +811,12 @@ def _base_row(
             "finite_standardization": True,
             "missing_values_preserved": True,
         },
+        "stationarity_qualification": qualification,
+        "rolling_diagnostics": rolling_artifact,
+        "causal_interpretation_eligible": qualification[
+            "causal_interpretation_eligible"
+        ],
+        "sensitivity_evidence_only": qualification["sensitivity_evidence_only"],
         "algorithm": {
             "name": "PCMCI+",
             "entry_point": "PCMCI.run_pcmciplus",
@@ -631,13 +875,14 @@ def run(args: argparse.Namespace) -> int:
     threads = args.threads if args.threads is not None else 1
     summary: dict[str, int] = {}
     for case in cases:
+        case_diagnostics = prepare_case_diagnostics(input_data, case, artifact_directory)
         for method in methods:
             print(
                 f"running {case.timing_variant}/{case.preprocessing_profile} {method}",
                 file=sys.stderr,
                 flush=True,
             )
-            row = _base_row(args, method, input_data, case, threads)
+            row = _base_row(args, method, case, threads, case_diagnostics)
             row.update(
                 _run_isolated_case(
                     args,
