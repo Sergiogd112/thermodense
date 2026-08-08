@@ -216,11 +216,16 @@ def append_jsonl(path: Path, row: dict[str, Any]) -> None:
 
 
 def run_isolated_process(
-    command: list[str], timeout: float, threads: int
+    command: list[str],
+    timeout: float,
+    threads: int,
+    environment_override: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Run a JSON-producing child in its own process group with a timeout."""
     environment = os.environ.copy()
     environment.update({name: str(threads) for name in THREAD_ENVIRONMENT})
+    if environment_override:
+        environment.update(environment_override)
     started = time.monotonic()
     try:
         process = subprocess.Popen(
