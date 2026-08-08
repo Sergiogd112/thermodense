@@ -252,7 +252,7 @@ def _matrix_rows_by_case(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]
             )
         by_case[key] = row
     if set(by_case) != set(expected):
-        raise MatrixSynthesisError("incomplete four-cell ParCorr sensitivity matrix")
+        raise MatrixSynthesisError("incomplete four-cell sensitivity matrix")
     return by_case
 
 
@@ -332,17 +332,38 @@ def _synthesize_matrix(
             "rows_dropped": False,
         }
         settings = row.get("settings")
+        expected_settings = (
+            {"significance": "analytic", "pc_alpha": 0.05}
+            if method != "cmiknn"
+            else {
+                "significance": "shuffle_test",
+                "pc_alpha": 0.05,
+                "sig_samples": 20,
+                "sig_blocklength": 4,
+                "knn": 0.1,
+                "shuffle_neighbors": 5,
+            }
+        )
         if (
             row.get("algorithm") != expected_algorithm
             or row.get("missing_data_policy") != expected_missing_policy
             or row.get("link_assumptions")
             != _link_assumption_metadata(tau_max, expected_node_order)
             or not isinstance(settings, dict)
-            or settings.get("significance") != "analytic"
-            or settings.get("pc_alpha") != 0.05
+            or any(
+                settings.get(name) != value for name, value in expected_settings.items()
+            )
             or not isinstance(settings.get("threads"), int)
             or isinstance(settings["threads"], bool)
             or settings["threads"] <= 0
+            or (
+                method == "cmiknn"
+                and (
+                    not isinstance(settings.get("workers"), int)
+                    or isinstance(settings["workers"], bool)
+                    or settings["workers"] <= 0
+                )
+            )
         ):
             raise MatrixSynthesisError("matrix production settings provenance mismatch")
         expected_stationarity_identity = {
@@ -510,7 +531,7 @@ def _synthesize_matrix(
             )
             item["source_cells"].append(key)
             item["evidence"].append({"case": key, **link})
-    return {
+    result = {
         "schema_version": "1",
         "implementation_version": RUNNER_VERSION,
         "state": "complete",
@@ -547,6 +568,13 @@ def _synthesize_matrix(
         "interaction_diagnostic_links": extracted[interaction_key],
         "orientation_diagnostics": diagnostics,
     }
+    if method == "cmiknn":
+        result |= {
+            "method_scope": "nonlinear sensitivity; not a substitute for ParCorr",
+            "untested_parcorr_lags_11_180": True,
+            "untested_lag_window_days": {"min": 11, "max": DEFAULT_TAU_MAX},
+        }
+    return result
 
 
 def synthesize_parcorr_matrix(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -554,9 +582,119 @@ def synthesize_parcorr_matrix(rows: list[dict[str, Any]]) -> dict[str, Any]:
     return _synthesize_matrix(rows, method="parcorr", tau_max=DEFAULT_TAU_MAX)
 
 
+def synthesize_cmiknn_matrix(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Synthesize the four bounded nonlinear 0--10-day sensitivity cells."""
+    return _synthesize_matrix(
+        rows, method="cmiknn", tau_max=runtime.CMIKNN_MAX_TAU_STEPS
+    )
+
+
 def synthesize_gpdctorch_matrix(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Synthesize the four gated GPDCtorch 0--10-day cells (not capability)."""
     return _synthesize_matrix(rows, method="gpdctorch", tau_max=10)
+
+
+def compare_cmiknn_with_parcorr(
+    cmiknn_agreement: dict[str, Any], parcorr_agreement: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Qualify ParCorr with bounded nonlinear evidence, without a veto rule."""
+    result: dict[str, Any] = {
+        "schema_version": "1",
+        "method": "cmiknn",
+        "method_scope": "nonlinear sensitivity; not a substitute for ParCorr",
+        "lag_window_days": {"min": 0, "max": runtime.CMIKNN_MAX_TAU_STEPS},
+        "not_a_substitute_for_parcorr_days_11_180": True,
+        "untested_parcorr_lags_11_180": True,
+        "parcorr_primary_links_outside_cmiknn_scope": [],
+        "parcorr_primary_links_outside_cmiknn_scope_count": 0,
+        "cmiknn_only_method_sensitive": [],
+    }
+    if (
+        not isinstance(cmiknn_agreement, dict)
+        or cmiknn_agreement.get("state") != "complete"
+        or cmiknn_agreement.get("method") != "cmiknn"
+        or cmiknn_agreement.get("physical_lag_window_days")
+        != {"min": 0, "max": runtime.CMIKNN_MAX_TAU_STEPS}
+        or not isinstance(cmiknn_agreement.get("primary_links"), list)
+    ):
+        raise ValueError("CMIknn agreement is incomplete or outside its bounded scope")
+    if (
+        not isinstance(parcorr_agreement, dict)
+        or parcorr_agreement.get("state") != "complete"
+    ):
+        return result | {"state": "pending_parcorr", "comparisons": []}
+    cmiknn = {
+        (
+            _physical_node(link.get("source")),
+            _physical_node(link.get("target")),
+            link.get("lag"),
+            link.get("sign"),
+        )
+        for link in cmiknn_agreement["primary_links"]
+        if isinstance(link, dict)
+    }
+    comparisons = []
+    outside_scope = []
+    parcorr_in_scope = set()
+    for link in parcorr_agreement.get("primary_links", []):
+        if not isinstance(link, dict):
+            continue
+        identity = (
+            _physical_node(link.get("source")),
+            _physical_node(link.get("target")),
+            link.get("lag"),
+            link.get("sign"),
+        )
+        lag = identity[2]
+        if not isinstance(lag, int):
+            continue
+        if lag > runtime.CMIKNN_MAX_TAU_STEPS:
+            outside_scope.append(
+                {name: link.get(name) for name in ("source", "target", "lag", "sign")}
+            )
+            continue
+        if lag < 0:
+            continue
+        parcorr_in_scope.add(identity)
+        comparisons.append(
+            {
+                "source": link.get("source"),
+                "target": link.get("target"),
+                "lag": lag,
+                "sign": identity[3],
+                "cmiknn_support": "strengthens"
+                if identity in cmiknn
+                else "qualifies_disagreement_or_not_detected",
+                "parcorr_visibility": "retained",
+                "vetoed": False,
+            }
+        )
+    cmiknn_only = [
+        {
+            "source": link.get("source"),
+            "target": link.get("target"),
+            "lag": link.get("lag"),
+            "sign": link.get("sign"),
+            "classification": "cmiknn_only_method_sensitive",
+            "evidence": link,
+        }
+        for link in cmiknn_agreement["primary_links"]
+        if isinstance(link, dict)
+        and (
+            _physical_node(link.get("source")),
+            _physical_node(link.get("target")),
+            link.get("lag"),
+            link.get("sign"),
+        )
+        not in parcorr_in_scope
+    ]
+    return result | {
+        "state": "complete",
+        "comparisons": comparisons,
+        "parcorr_primary_links_outside_cmiknn_scope": outside_scope,
+        "parcorr_primary_links_outside_cmiknn_scope_count": len(outside_scope),
+        "cmiknn_only_method_sensitive": cmiknn_only,
+    }
 
 
 def compare_gpdctorch_with_parcorr(
@@ -2144,6 +2282,15 @@ def _base_row(
         },
         "settings": real_method_settings(method, args.cmiknn_workers)
         | {"threads": threads},
+        **(
+            {
+                "method_scope": "nonlinear sensitivity; not a substitute for ParCorr",
+                "untested_parcorr_lags_11_180": True,
+                "untested_lag_window_days": {"min": 11, "max": DEFAULT_TAU_MAX},
+            }
+            if method == "cmiknn"
+            else {}
+        ),
         "package_versions": runtime.package_versions(),
         "git_commit": runtime.git_commit(),
         "wall_seconds": None,
@@ -2196,10 +2343,41 @@ def _write_incomplete_matrix_manifest(
     )
 
 
+class _TrackExplicitTauMax(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None) -> None:
+        setattr(namespace, self.dest, values)
+        setattr(namespace, "_tau_max_explicit", True)
+
+
+def _normalize_run_args(args: argparse.Namespace) -> None:
+    """Apply mode-specific defaults before validating or dispatching a run."""
+    if args.cmiknn_sensitivity_matrix and not getattr(args, "_tau_max_explicit", False):
+        args.tau_max = runtime.CMIKNN_MAX_TAU_STEPS
+
+
 def run(args: argparse.Namespace) -> int:
+    _normalize_run_args(args)
+    # Resolve paths before any output-side effect or input load.
+    args.input = args.input.resolve()
+    args.output = args.output.resolve()
+    args.parcorr_agreement = (
+        args.parcorr_agreement.resolve() if args.parcorr_agreement is not None else None
+    )
     artifact_directory = args.output.parent / f"{args.output.stem}_artifacts"
-    agreement_path = artifact_directory / "parcorr-sensitivity-agreement.jsonl"
+    if args.input == args.output:
+        raise ValueError("input and output must be different paths")
+    if args.input == artifact_directory or args.input.is_relative_to(
+        artifact_directory
+    ):
+        raise ValueError("input must not reside inside the derived artifact directory")
+    cmiknn_matrix = args.cmiknn_sensitivity_matrix
+    agreement_method = "cmiknn" if cmiknn_matrix else "parcorr"
+    agreement_path = (
+        artifact_directory / f"{agreement_method}-sensitivity-agreement.jsonl"
+    )
     production_matrix = args.production_sensitivity_matrix
+    if production_matrix and cmiknn_matrix:
+        raise ValueError("select only one production sensitivity matrix method")
     if production_matrix:
         if args.methods not in (None, ["parcorr"]):
             raise ValueError("production sensitivity matrix requires only ParCorr")
@@ -2211,6 +2389,23 @@ def run(args: argparse.Namespace) -> int:
             raise ValueError(
                 "production sensitivity matrix does not accept --row-limit"
             )
+    if cmiknn_matrix:
+        if args.methods not in (None, ["cmiknn"]):
+            raise ValueError("CMIknn sensitivity matrix requires only CMIknn")
+        if args.tau_max != runtime.CMIKNN_MAX_TAU_STEPS:
+            raise ValueError(
+                "CMIknn sensitivity matrix requires physical lags 0-10 days"
+            )
+        if args.row_limit is not None:
+            raise ValueError("CMIknn sensitivity matrix does not accept --row-limit")
+        if args.parcorr_agreement is not None:
+            parcorr_path = args.parcorr_agreement
+            if parcorr_path == args.output.resolve() or parcorr_path.is_relative_to(
+                artifact_directory.resolve()
+            ):
+                raise ValueError(
+                    "ParCorr agreement must not overlap CMIknn output or artifacts"
+                )
     if args.methods and "gpdctorch" in args.methods:
         raise ValueError(
             "ordinary runner cannot execute GPDCtorch; use gpdctorch-gated"
@@ -2228,26 +2423,44 @@ def run(args: argparse.Namespace) -> int:
         if input_data.raw_f107 is None:
             raise ValueError("input CSV is missing raw observed daily F10.7")
     except Exception as error:
-        if not production_matrix:
+        if not (production_matrix or cmiknn_matrix):
             raise
         controlled = MatrixSynthesisError(
             f"incomplete matrix: {type(error).__name__}: {error}"
         )
         _write_incomplete_matrix_manifest(agreement_path, controlled, None, [])
         raise controlled from error
+    validated_parcorr: tuple[dict[str, Any], dict[str, str]] | None = None
+    if cmiknn_matrix and args.parcorr_agreement is not None:
+        _, _, accepted_quality_rows = prepare_sensitivity_input(
+            input_data,
+            sensitivity_case(RAW_OBSERVED_DAILY, DETRENDED_ANOMALY),
+        )
+        validated_parcorr = _validate_parcorr_agreement(
+            args.parcorr_agreement, accepted_quality_rows
+        )
+    if cmiknn_matrix and args.overwrite:
+        args.output.write_text("")
+        shutil.rmtree(artifact_directory, ignore_errors=True)
     cases = (
         expand_sensitivity_cases()
-        if args.all_sensitivity_cases or production_matrix
+        if args.all_sensitivity_cases or production_matrix or cmiknn_matrix
         else (sensitivity_case(args.timing_variant, args.preprocessing_profile),)
     )
-    methods = ("parcorr",) if production_matrix else args.methods or DEFAULT_METHODS
+    methods = (
+        ("parcorr",)
+        if production_matrix
+        else ("cmiknn",)
+        if cmiknn_matrix
+        else args.methods or DEFAULT_METHODS
+    )
     if args.all_sensitivity_cases and "gpdctorch" in methods:
         raise ValueError("GPDCtorch sensitivity-matrix execution is not available")
     for method in methods:
         for case in cases:
             if method == "gpdctorch":
                 _validate_gpdctorch_scope(method, args.tau_max, case, input_data)
-    if args.overwrite and not production_matrix:
+    if args.overwrite and not (production_matrix or cmiknn_matrix):
         args.output.write_text("")
         shutil.rmtree(artifact_directory, ignore_errors=True)
     artifact_directory.mkdir(parents=True, exist_ok=True)
@@ -2284,8 +2497,19 @@ def run(args: argparse.Namespace) -> int:
         if production_matrix:
             agreement = synthesize_parcorr_matrix(rows)
             runtime.write_jsonl_artifact(agreement_path, [agreement])
+        elif cmiknn_matrix:
+            agreement = synthesize_cmiknn_matrix(rows)
+            cmiknn_source = runtime.write_jsonl_artifact(agreement_path, [agreement])
+            if validated_parcorr is not None:
+                parcorr, parcorr_source = validated_parcorr
+                comparison = compare_cmiknn_with_parcorr(agreement, parcorr)
+                comparison["cmiknn_agreement"] = cmiknn_source
+                comparison["parcorr_agreement"] = parcorr_source
+                runtime.write_jsonl_artifact(
+                    artifact_directory / "cmiknn-parcorr-comparison.jsonl", [comparison]
+                )
     except Exception as error:
-        if not production_matrix:
+        if not (production_matrix or cmiknn_matrix):
             raise
         controlled = (
             error
@@ -2329,7 +2553,23 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="run exactly the four ParCorr 0-180-day sensitivity cells and synthesize agreement",
     )
-    run_parser.add_argument("--tau-max", type=int, default=DEFAULT_TAU_MAX)
+    run_parser.add_argument(
+        "--cmiknn-sensitivity-matrix",
+        action="store_true",
+        help="run exactly the four CMIknn 0-10-day sensitivity cells and synthesize agreement",
+    )
+    run_parser.add_argument(
+        "--parcorr-agreement",
+        type=Path,
+        help="validated ParCorr 0-180-day agreement for an optional bounded comparison",
+    )
+    run_parser.set_defaults(_tau_max_explicit=False)
+    run_parser.add_argument(
+        "--tau-max",
+        type=int,
+        default=DEFAULT_TAU_MAX,
+        action=_TrackExplicitTauMax,
+    )
     run_parser.add_argument(
         "--row-limit", type=int, help="calibration-only prefix row limit"
     )
@@ -2383,6 +2623,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "case":
         return _child_main(args)
     try:
+        if args.command == "run":
+            _normalize_run_args(args)
         if args.command == "gpdctorch-gated":
             if args.threads is not None and args.threads <= 0:
                 raise ValueError("--threads must be positive")
