@@ -1598,6 +1598,11 @@ def _validate_gated_stage_result(
     )
     if legacy:
         labels = ("host_label", "environment_label", "environment_fingerprint")
+        current_settings = identity["settings"]
+        legacy_settings = result.get("settings")
+        expected_legacy_settings = {
+            key: value for key, value in current_settings.items() if key != "threads"
+        }
         if (
             stage.name != "capability"
             or evidence.get("original_labels")
@@ -1608,6 +1613,12 @@ def _validate_gated_stage_result(
             or not gpdctorch_gates._legacy_tigramite_pin(
                 evidence.get("original_git_commit"), identity["tigramite_pin"]
             )
+            or current_settings.get("threads") != 1
+            or legacy_settings != expected_legacy_settings
+            or evidence.get("legacy_settings") != legacy_settings
+            or evidence.get("current_requested_settings") != current_settings
+            or evidence.get("threads_provenance")
+            != "legacy_absent_constrained_to_default_1"
             or evidence.get("current_hardware") != hardware
             or evidence.get("current_environment")
             != gpdctorch_gates.environment_identity()
@@ -1635,7 +1646,7 @@ def _validate_gated_stage_result(
         or (not legacy and result.get("gate_stage") != stage.name)
         or result.get("tau_max") != stage.tau_max
         or (not legacy and result.get("timeout_seconds") != stage.timeout_seconds)
-        or result.get("settings") != identity["settings"]
+        or (not legacy and result.get("settings") != identity["settings"])
         or (not legacy and result.get("hardware") != hardware)
         or result.get("package_versions")
         != gpdctorch_gates.environment_identity()["package_versions"]

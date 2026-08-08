@@ -320,6 +320,13 @@ def import_capability(
     }
     if legacy:
         labels = ("host_label", "environment_label", "environment_fingerprint")
+        current_settings = identity.get("settings")
+        legacy_settings = row.get("settings")
+        expected_legacy_settings = (
+            {key: value for key, value in current_settings.items() if key != "threads"}
+            if isinstance(current_settings, dict)
+            else None
+        )
         if (
             not hardware.get("eligible")
             or "gpdctorch_lifecycle" in row
@@ -334,12 +341,23 @@ def import_capability(
             )
         ):
             raise GateError("legacy capability evidence cannot be environment-attested")
+        if (
+            not isinstance(current_settings, dict)
+            or current_settings.get("threads") != 1
+            or legacy_settings != expected_legacy_settings
+        ):
+            raise GateError(
+                "legacy capability settings require missing threads constrained to 1"
+            )
         capability_evidence = {
             "mode": "legacy_environment_attestation",
             "original_labels": {key: row.get(key) for key in labels},
             "original_git_commit": row.get("git_commit"),
             "tigramite_pin": identity["tigramite_pin"],
             "pin_proven": True,
+            "legacy_settings": legacy_settings,
+            "current_requested_settings": current_settings,
+            "threads_provenance": "legacy_absent_constrained_to_default_1",
             "current_hardware": hardware,
             "current_environment": environment_identity(),
         }
