@@ -157,6 +157,7 @@ def _child(calls: list[tuple[str, int]], command, timeout, _threads, _environmen
     reference = runtime.write_npz_artifact(artifact, matrices, node_names=nodes)
     return {
         "status": "succeeded",
+        "settings": {"pc_alpha": 0.05, "significance": "analytic"},
         "wall_seconds": 1,
         "failure_reason": None,
         "artifact": reference,
@@ -260,6 +261,18 @@ def test_gated_runner_completes_resumes_and_regenerates_only_derived(
     state_path = tmp_path / "agreement_artifacts" / "gpdctorch-gates.json"
     state = json.loads(state_path.read_text())
     assert state["state"] == state["derived"]["status"] == "complete"
+    primary = state["stages"]["primary"]["result"]
+    assert primary["settings"]["threads"] == 1
+    assert primary["child_settings"] == {
+        "pc_alpha": 0.05,
+        "significance": "analytic",
+    }
+    assert pcmci_real._validate_gated_stage_result(
+        state["stages"]["primary"],
+        state["identity"],
+        HARDWARE,
+        pcmci_real.load_input(args.input),
+    )
     assert (
         json.loads(Path(state["derived"]["comparison"]["path"]).read_text())["state"]
         == "pending_parcorr"
@@ -270,6 +283,34 @@ def test_gated_runner_completes_resumes_and_regenerates_only_derived(
     Path(state["derived"]["comparison"]["path"]).unlink()
     assert pcmci_real.run_gpdctorch_gated(args) == 0
     assert len(calls) == 5
+
+
+@pytest.mark.parametrize("child_settings", [None, {"pc_alpha": 0.05}])
+def test_gated_runner_blocks_successful_child_without_matching_settings(
+    tmp_path: Path, monkeypatch, child_settings: dict[str, object] | None
+) -> None:
+    _write_input(tmp_path / "input.csv")
+    monkeypatch.setattr(gpdctorch_gates, "gpu_hardware", lambda: HARDWARE)
+
+    def child(*child_args):
+        result = _child([], *child_args)
+        if child_settings is None:
+            result.pop("settings")
+        else:
+            result["settings"] = child_settings
+        return result
+
+    monkeypatch.setattr(runtime, "run_isolated_process", child)
+
+    assert pcmci_real.run_gpdctorch_gated(_args(tmp_path)) == 1
+    state = json.loads(
+        (tmp_path / "agreement_artifacts" / "gpdctorch-gates.json").read_text()
+    )
+    result = state["stages"]["capability"]["result"]
+    assert state["state"] == "blocked"
+    assert result["status"] == "failed"
+    assert result["child_settings"] == child_settings
+    assert "child settings" in result["failure_reason"]
 
 
 def test_parcorr_request_identity_rejects_invalid_and_regenerates_without_fits(
