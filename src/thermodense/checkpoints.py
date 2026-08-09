@@ -15,6 +15,12 @@ from typing import Any
 
 
 CHUNK_SIZE = 1024 * 1024
+_CHECKPOINT_LOAD_ERRORS = (
+    FileNotFoundError,
+    json.JSONDecodeError,
+    TypeError,
+    ValueError,
+)
 
 
 def sha256_bytes(value: bytes) -> str:
@@ -160,7 +166,7 @@ def load(path: Path) -> Checkpoint | None:
         ):
             return None
         return Checkpoint(**value)
-    except FileNotFoundError, json.JSONDecodeError, TypeError, ValueError:
+    except _CHECKPOINT_LOAD_ERRORS:
         return None
 
 
