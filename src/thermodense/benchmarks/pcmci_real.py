@@ -1647,6 +1647,15 @@ def _validate_gated_stage_result(
         or result.get("tau_max") != stage.tau_max
         or (not legacy and result.get("timeout_seconds") != stage.timeout_seconds)
         or (not legacy and result.get("settings") != identity["settings"])
+        or (
+            not legacy
+            and result.get("child_settings")
+            != {
+                key: value
+                for key, value in identity["settings"].items()
+                if key != "threads"
+            }
+        )
         or (not legacy and result.get("hardware") != hardware)
         or result.get("package_versions")
         != gpdctorch_gates.environment_identity()["package_versions"]
@@ -2226,7 +2235,7 @@ def _run_gpdctorch_gated_locked(
             threads,
             {"THERMODENSE_GPDC_GATE_AUTH": authorization},
         )
-        row.update(result)
+        row = _merge_child_result(row, result)
         row["timeout_seconds"] = stage.timeout_seconds
         row["artifact_path"] = str(artifact)
         return row
@@ -2399,6 +2408,25 @@ def _base_row(
         "artifact": None,
         "failure_reason": None,
     }
+
+
+def _merge_child_result(
+    parent: dict[str, Any], child: dict[str, Any]
+) -> dict[str, Any]:
+    """Merge an isolated child payload without letting it replace outer settings."""
+    child_settings = child.get("settings")
+    result = parent | {key: value for key, value in child.items() if key != "settings"}
+    result["settings"] = parent["settings"]
+    result["child_settings"] = child_settings
+    expected_child_settings = {
+        key: value for key, value in parent["settings"].items() if key != "threads"
+    }
+    if child.get("status") == "succeeded" and child_settings != expected_child_settings:
+        result["status"] = "failed"
+        result["failure_reason"] = (
+            "child settings do not match parent settings without threads"
+        )
+    return result
 
 
 def _write_incomplete_matrix_manifest(
@@ -2582,7 +2610,8 @@ def run(args: argparse.Namespace) -> int:
                     flush=True,
                 )
                 row = _base_row(args, method, case, threads, case_diagnostics)
-                row.update(
+                row = _merge_child_result(
+                    row,
                     _run_isolated_case(
                         args,
                         method,
@@ -2590,7 +2619,7 @@ def run(args: argparse.Namespace) -> int:
                         threads,
                         artifact_directory
                         / f"{method}-{case.timing_variant}-{case.preprocessing_profile}.npz",
-                    )
+                    ),
                 )
                 runtime.append_jsonl(args.output, row)
                 rows.append(row)

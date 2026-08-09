@@ -1006,6 +1006,45 @@ def test_matrix_execution_emits_four_matching_case_rows(
     }
 
 
+@pytest.mark.parametrize("method", ["parcorr", "cmiknn"])
+def test_run_keeps_outer_threads_and_records_child_settings(
+    tmp_path: Path, monkeypatch, method: str
+) -> None:
+    input_path = tmp_path / "five_node.csv"
+    _frame().write_csv(input_path)
+    output = tmp_path / "result.jsonl"
+    args = pcmci_real.parser().parse_args(
+        [
+            "run",
+            "--input",
+            str(input_path),
+            "--output",
+            str(output),
+            "--methods",
+            method,
+            "--threads",
+            "2",
+            "--cmiknn-workers",
+            "3",
+        ]
+    )
+
+    def fake_case(args, method, _case, _threads, _artifact):
+        return {
+            "status": "succeeded",
+            "settings": pcmci_real.real_method_settings(method, args.cmiknn_workers),
+            "wall_seconds": 1,
+        }
+
+    monkeypatch.setattr(pcmci_real, "_run_isolated_case", fake_case)
+
+    assert pcmci_real.run(args) == 0
+    row = json.loads(output.read_text())
+    expected_child_settings = pcmci_real.real_method_settings(method, 3)
+    assert row["settings"] == expected_child_settings | {"threads": 2}
+    assert row["child_settings"] == expected_child_settings
+
+
 def test_production_matrix_runs_exact_parcorr_cells_and_writes_agreement(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -1028,6 +1067,7 @@ def test_production_matrix_runs_exact_parcorr_cells_and_writes_agreement(
         calls.append((method, case))
         return {
             "status": "succeeded",
+            "settings": pcmci_real.real_method_settings(method, args.cmiknn_workers),
             "artifact": pcmci_real.runtime.write_npz_artifact(
                 artifact,
                 {
@@ -1081,6 +1121,7 @@ def test_cmiknn_matrix_runs_exact_cells_and_records_bounded_scope(
         calls.append((method, case))
         return {
             "status": "succeeded",
+            "settings": pcmci_real.real_method_settings(method, args.cmiknn_workers),
             "artifact": pcmci_real.runtime.write_npz_artifact(
                 artifact,
                 {
