@@ -19,7 +19,7 @@ import resource
 import shutil
 import sys
 import time
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeAlias, cast
 import warnings
 
 from filelock import FileLock, Timeout
@@ -55,8 +55,8 @@ CENTERED_81_DAY = "centered_81_day"
 DETRENDED_ANOMALY = "detrended_anomaly"
 SEASONAL_ANOMALY = "seasonal_anomaly"
 
-type F107TimingVariant = Literal["raw_observed_daily", "centered_81_day"]
-type PreprocessingProfile = Literal["detrended_anomaly", "seasonal_anomaly"]
+F107TimingVariant: TypeAlias = Literal["raw_observed_daily", "centered_81_day"]  # noqa: UP040 -- retain Python 3.11 runtime compatibility
+PreprocessingProfile: TypeAlias = Literal["detrended_anomaly", "seasonal_anomaly"]  # noqa: UP040 -- retain Python 3.11 runtime compatibility
 
 
 @dataclass(frozen=True)
