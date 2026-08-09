@@ -31,6 +31,7 @@ from pymsis.utils import get_f107_ap
 from sgp4.api import Satrec
 
 MODELS = ("0", "2.0", "2.1")
+_TLE_DOWNLOAD_ERRORS = (urllib.error.URLError, TimeoutError)
 DEFAULT_SYLVESTER_DIR = Path(
     "/home/sergiogd/Github/exodense/TLE Code and Data Sylvester/TLE data"
 )
@@ -196,7 +197,7 @@ def download_spacetrack_tle(
     try:
         with urllib.request.urlopen(request, timeout=120) as response:
             payload = response.read().decode("utf-8", errors="replace")
-    except urllib.error.URLError, TimeoutError:
+    except _TLE_DOWNLOAD_ERRORS:
         return None
 
     if "1 " not in payload or "2 " not in payload:

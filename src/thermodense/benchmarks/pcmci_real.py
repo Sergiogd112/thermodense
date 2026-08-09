@@ -43,6 +43,7 @@ DEFAULT_METHODS = ("parcorr",)
 DEFERRED_METHODS = {"gpdc": "explicitly deferred for real-data PCMCI+ runs"}
 DEFAULT_TAU_MAX = 180
 DEFAULT_CMIKNN_WORKERS = 24
+_GATED_ARTIFACT_VALIDATION_ERRORS = (OSError, ValueError)
 MISSING_FLAG = -999999.0
 SEED = 20260802
 ROLLING_WINDOW = 1095
@@ -1713,7 +1714,7 @@ def _validate_gated_stage_result(
             == ["graph", "node_names", "p_matrix", "val_matrix"]
             and runtime.compact_result_digest(matrices) == result.get("result_digest")
         )
-    except OSError, ValueError:
+    except _GATED_ARTIFACT_VALIDATION_ERRORS:
         return False
 
 
