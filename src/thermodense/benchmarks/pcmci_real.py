@@ -28,6 +28,7 @@ import polars as pl
 
 from thermodense.benchmarks import runtime
 from thermodense.benchmarks import gpdctorch_gates
+from thermodense.benchmarks import ci_cache
 from thermodense.benchmarks.real_data import (
     DATE_COLUMN,
     DEFAULT_OUTPUT as DEFAULT_INPUT,
@@ -1487,6 +1488,22 @@ def _child_main(args: argparse.Namespace) -> int:
         started = time.monotonic()
         case = sensitivity_case(args.timing_variant, args.preprocessing_profile)
         context = _validate_gated_child(args) if args.method == "gpdctorch" else None
+        if context is not None:
+            ci_cache.enable_ci_cache(
+                Path(args.gate_state).parent
+                / f"ci-cache-{context.stage.name}.sqlite3",
+                identity={
+                    "stage": context.stage.name,
+                    "method": args.method,
+                    "tau_max": args.tau_max,
+                    "timing_variant": args.timing_variant,
+                    "preprocessing_profile": args.preprocessing_profile,
+                    "seed": _method_seed(args.method),
+                    "input_sha256": hashlib.sha256(
+                        Path(args.input).read_bytes()
+                    ).hexdigest(),
+                },
+            )
         runner = _run_pcmciplus_gated if context else run_pcmciplus
         payload = (
             runner(
@@ -1509,6 +1526,8 @@ def _child_main(args: argparse.Namespace) -> int:
             )
         )
         payload.update(status="succeeded", wall_seconds=time.monotonic() - started)
+        if context is not None:
+            payload["ci_cache"] = ci_cache.stats()
     except Exception as error:
         payload = {
             "status": "failed",
