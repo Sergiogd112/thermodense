@@ -24,6 +24,10 @@ _Avoid_: adding JB2008 alone when the post-thesis empirical-model comparison cal
 The first paper preserves the thesis's main goal, specific objectives, overall structure, and combined dependence-analysis, empirical-model, and causal-discovery scope, while strengthening the evidence with refreshed sources, more complete analysis, and the paired JB2006/JB2008 baselines alongside the MSIS family. The thesis-defense presentation supplies the initial main-text result sequence and evidence hierarchy, while the thesis supplies the complete methods, results, and caveats. The paper's organizing claim is the forcing hierarchy: solar forcing dominates resolved density variability, geomagnetic forcing supplies secondary disturbed-time structure, and CO2-related evidence is physically consistent but conditional. The empirical-model comparison tests how faithfully model errors preserve that hierarchy rather than serving as a standalone matched-error benchmark.
 _Avoid_: narrowing the first paper to only empirical-model benchmarking; presenting all results as an unranked inventory; replacing the thesis question with a new question merely because the paper is more complete
 
+**Selected first-paper figure set**:
+The user-selected, supervisor-aligned concise figures-first plan contains six ordered candidates, with five or six retained as main figures after artifact review. Figure 6, the secular density trend comparison, is the organizing result; prior PCMCI review figures are supplementary rather than members of this set.
+_Avoid_: treating planned candidates as rendered/provenanced workbench artifacts; promoting the PCMCI sample set into the main-paper set
+
 **TU Delft satellite density dataset**:
 The accelerometer-derived thermospheric density dataset formed from the available TU Delft CHAMP, GOCE, GRACE-A, GRACE-B, GRACE-FO, Swarm-A, Swarm-B, and Swarm-C mission files.
 _Avoid_: all satellites unless the included missions are specified

@@ -5,6 +5,11 @@ direction comes from prototype decision #15; Ledger and Claim-first remain
 historical design evidence on `prototype/issue-15-figure-review` and are not
 production navigation.
 
+The currently committed PCMCI set is a sample/supplementary set, not the
+selected first-paper figure set. Planned paper candidates enter this immutable
+workbench only after their rendered artifacts and provenance are available; a
+plan alone is not a figure-set artifact.
+
 ## Product contract
 
 The workbench reviews immutable, versioned figure sets without rerunning an

@@ -19,6 +19,11 @@ SABER coverage, F30, 3-hour sampling, and hmF2+NmF2. ParCorr is the only
 conditional-independence test used before cluster access. Omitting 3-year
 detrending is a robustness check, not a replacement analysis.
 
+The selected first-paper work is a concise, figures-first set of six candidates
+(five or six after artifact review); its secular density trend comparison
+(Figure 6) is the organizing result. See
+[`docs/first-paper-figure-plan.md`](docs/first-paper-figure-plan.md).
+
 ## Install and inspect
 
 ```console

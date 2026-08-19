@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "set": "first-paper-figures",
+  "main_figure_target": "5-6",
+  "status": "Six candidates; 5-6 remain main figures after artifact review.",
+  "supplementary_note": "Prior PCMCI review figures are supplementary and are not part of this set.",
+  "figures": [
+    {
+      "id": "fig-1", "number": 1, "title": "Coverage and provenance of density products",
+      "role_message": "Establish coverage and provenance; this is not evidence of a scientific effect.",
+      "panel_layout_contract": "Two-panel time-altitude coverage map: regular/gridded products alongside TU Delft mission coverage.",
+      "datasets": ["Global mean", "HASDM", "regular/gridded products", "TU Delft missions"],
+      "variables_analysis": ["time", "altitude", "product and mission coverage"],
+      "uncertainty_encodings": ["provenance/product-type annotations", "coverage gaps shown explicitly"],
+      "existing_producers": ["scripts/global_mean.py", "scripts/tudelft_density_analysis.py", "scripts/decode_hasdm.py"],
+      "implementation_status_blockers": "Candidate only; a common coverage/provenance renderer has not been confirmed.",
+      "may_move_to_appendix": false
+    },
+    {
+      "id": "fig-2", "number": 2, "title": "F10.7 response by altitude across density products",
+      "role_message": "Compare solar-response structure across applicable density products and empirical baselines.",
+      "panel_layout_contract": "Altitude summaries for daily mean log density and daily log-density range, comparing applicable Global mean, HASDM, TU Delft, NRLMSIS-family, and paired JB2006/JB2008 results.",
+      "datasets": ["Global mean", "HASDM", "TU Delft", "NRLMSISE-00", "NRLMSIS 2.0", "NRLMSIS 2.1", "JB2006", "JB2008"],
+      "variables_analysis": ["F10.7", "daily mean log density", "daily log-density range", "slopes", "correlation"],
+      "uncertainty_encodings": ["95% intervals", "record-length markers"],
+      "existing_producers": ["scripts/global_mean.py", "scripts/maunaloa_global_figures.py", "scripts/tudelft_density_analysis.py", "scripts/hasdm_msis_density_baseline_analysis.py"],
+      "implementation_status_blockers": "Cross-product composite remains to be rendered; WACCM-X is explicitly excluded.",
+      "may_move_to_appendix": false
+    },
+    {
+      "id": "fig-3", "number": 3, "title": "HASDM driver scatter composite",
+      "role_message": "Show the descriptive HASDM relationships supporting the forcing comparison.",
+      "panel_layout_contract": "Exact 4x4 scatter composite. Rows: mean log density at 175 and 825 km, then daily log-density range at 175 and 825 km. Columns: F10.7 centered 81-day mean, Ap, tropospheric CO2, SABER CO2 cooling at 139 km.",
+      "datasets": ["Mauna Loa HASDM subset", "space weather", "Mauna Loa CO2", "SABER CO2 cooling"],
+      "variables_analysis": ["daily mean log density", "daily log-density range", "F10.7 centered 81-day mean", "Ap", "tropospheric CO2", "SABER CO2 cooling at 139 km"],
+      "uncertainty_encodings": ["point density/overplotting via alpha", "no regression line"],
+      "existing_producers": ["scripts/maunaloa_global_figures.py:plot_paper_candidate_figure_3"],
+      "implementation_status_blockers": "Renderer implemented; requires all-altitude data with the exact four targets and drivers.",
+      "may_move_to_appendix": false
+    },
+    {
+      "id": "fig-4", "number": 4, "title": "Altitude summary of CO2 and cooling relationships",
+      "role_message": "Summarise mean/range relationships by altitude with solar and geomagnetic context.",
+      "panel_layout_contract": "Two-panel altitude summary for mean/range CO2 and SABER-cooling relationships, with F10.7 and Ap/Kp activity context.",
+      "datasets": ["Mauna Loa HASDM subset", "space weather", "Mauna Loa CO2", "SABER CO2 cooling"],
+      "variables_analysis": ["daily mean log density", "daily log-density range", "F10.7 centered 81-day mean", "Ap", "CO2", "SABER cooling maximum/139 km", "Pearson correlation"],
+      "uncertainty_encodings": ["95% intervals", "effect-size/reference bands", "record-length markers"],
+      "existing_producers": ["scripts/maunaloa_global_figures.py:plot_correlation_by_altitude"],
+      "implementation_status_blockers": "Selected-driver candidate renderer implemented. Exact activity stratification is a pre-render contract item if existing code cannot express it cleanly.",
+      "may_move_to_appendix": false
+    },
+    {
+      "id": "fig-5", "number": 5, "title": "Paired empirical-model residual diagnostic",
+      "role_message": "Compare HASDM-referenced residual behaviour and residual time scales across paired empirical models.",
+      "panel_layout_contract": "Paired HASDM-referenced residual time series and residual FFT panels for NRLMSISE-00, NRLMSIS 2.0, NRLMSIS 2.1, JB2006, and JB2008.",
+      "datasets": ["Mauna Loa HASDM subset", "NRLMSISE-00", "NRLMSIS 2.0", "NRLMSIS 2.1", "JB2006", "JB2008"],
+      "variables_analysis": ["model log-density-ratio error", "time series", "residual FFT"],
+      "uncertainty_encodings": ["paired common-sample provenance", "no universal accuracy ranking"],
+      "existing_producers": ["scripts/hasdm_msis_residual_saber_analysis.py", "scripts/plot_hasdm_msis_residual_causal_composites.py"],
+      "implementation_status_blockers": "Needs paired JB outputs in the residual composite; may move if the main set is crowded.",
+      "may_move_to_appendix": true
+    },
+    {
+      "id": "fig-6", "number": 6, "title": "Secular density trend comparison",
+      "role_message": "The paper-organizing result: compare original thesis/literature framing with updated solar-adjusted altitude-resolved estimates and Brown et al. 2024 context.",
+      "panel_layout_contract": "Side-by-side original thesis/literature view and updated solar-adjusted altitude-resolved estimates with Brown et al. 2024 context.",
+      "datasets": ["thesis/literature trend sources", "updated density products", "Brown et al. 2024"],
+      "variables_analysis": ["secular density trend", "percent per decade", "solar-adjusted altitude-resolved estimates"],
+      "uncertainty_encodings": ["HAC 95% intervals", "record-length markers"],
+      "existing_producers": ["scripts/recreate_brown_density_trend_current.py"],
+      "implementation_status_blockers": "Updated comparison composition and source/provenance audit remain before rendering.",
+      "may_move_to_appendix": false
+    }
+  ]
+}

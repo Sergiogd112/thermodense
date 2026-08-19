@@ -61,6 +61,19 @@ SABER_COLS = [
     "saber_co2cool_median_alt",
     "saber_co2cool_max_alt",
 ]
+PAPER_CANDIDATE_FIGURE_3_ROWS = [
+    "log10rho_175_daily_mean",
+    "log10rho_825_daily_mean",
+    "log10rho_175_daily_range",
+    "log10rho_825_daily_range",
+]
+PAPER_CANDIDATE_FIGURE_3_COLUMNS = [
+    "F10.7_OBS_CENTER81",
+    "AP_AVG",
+    "CO2_ppm",
+    "saber_co2cool_max_alt",
+]
+PAPER_CANDIDATE_FIGURE_4_CAUSES = PAPER_CANDIDATE_FIGURE_3_COLUMNS
 SABER_LABELS_FALLBACK = {
     "saber_co2cool_min_alt": "SABER CO$_2$ cooling min altitude",
     "saber_co2cool_median_alt": "SABER CO$_2$ cooling median altitude",
@@ -1113,13 +1126,63 @@ def plot_density_scatter_by_altitude(df: pl.DataFrame, altitudes: list[int]) -> 
             )
 
 
-def plot_correlation_by_altitude(df: pl.DataFrame, altitudes: list[int]) -> None:
-    causes = [*ANALYSIS_COLS, *SABER_COLS]
+def paper_candidate_figure_3_layout() -> tuple[list[str], list[str]]:
+    """Return the fixed target and driver order selected for Figure 3."""
+    return [*PAPER_CANDIDATE_FIGURE_3_ROWS], [*PAPER_CANDIDATE_FIGURE_3_COLUMNS]
+
+
+def require_columns(df: pl.DataFrame, cols: list[str], figure_name: str) -> None:
+    missing = [col for col in cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"{figure_name} requires columns: {', '.join(missing)}")
+
+
+def plot_paper_candidate_figure_3(df: pl.DataFrame, altitudes: list[int]) -> None:
+    rows, columns = paper_candidate_figure_3_layout()
+    required_altitudes = [175, 825]
+    missing_altitudes = [
+        altitude for altitude in required_altitudes if altitude not in altitudes
+    ]
+    if missing_altitudes:
+        raise ValueError(
+            "Paper candidate Figure 3 requires HASDM altitudes: "
+            + ", ".join(f"{altitude} km" for altitude in missing_altitudes)
+        )
+    require_columns(df, [*rows, *columns], "Paper candidate Figure 3")
+    fig, axes = plt.subplots(4, 4, figsize=(8.4, 7.6), constrained_layout=True)
+    for row, y_col in enumerate(rows):
+        for col, x_col in enumerate(columns):
+            ax = axes[row, col]
+            x, y = finite_xy(df, x_col, y_col)
+            ax.scatter(x, y, s=5, alpha=0.22, rasterized=scatter_rasterized(len(x)))
+            if row == 0:
+                ax.set_title(label_for_col(x_col), fontsize=9)
+            if col == 0:
+                ax.set_ylabel(label_for_col(y_col), fontsize=8)
+            ax.tick_params(labelsize=7)
+            ax.grid(True, alpha=0.15)
+    fig.suptitle(
+        "Paper candidate Figure 3: HASDM driver scatter composite", fontsize=11
+    )
+    save_and_close(
+        fig, CORRELATION_DIR / "paper_candidate_figure_3_hasdm_scatter_composite.pgf"
+    )
+
+
+def plot_correlation_by_altitude(
+    df: pl.DataFrame,
+    altitudes: list[int],
+    causes: list[str] | None = None,
+    filename: str = "maunaloa_correlation_by_altitude.pgf",
+    title: str = "Mauna Loa correlation by HASDM altitude",
+) -> None:
+    causes = [*ANALYSIS_COLS, *SABER_COLS] if causes is None else causes
+    require_columns(df, causes, title)
     fig, axes = plt.subplots(
         2, 1, figsize=(7.2, 5.2), sharex=True, constrained_layout=True
     )
     observed_duration_bins: set[int] = set()
-    for ax, title, col_fn in [
+    for ax, panel_title, col_fn in [
         (axes[0], r"$\bar{\ell_\rho}$", density_mean_col),
         (axes[1], r"$\Delta\ell_\rho$", density_range_col),
     ]:
@@ -1179,7 +1242,7 @@ def plot_correlation_by_altitude(df: pl.DataFrame, altitudes: list[int]) -> None
         ax.axhline(0, color="black", linewidth=0.8)
         ax.set_ylim(-1, 1)
         ax.set_ylabel("Pearson r", fontsize=10)
-        ax.set_title(title, fontsize=10)
+        ax.set_title(panel_title, fontsize=10)
         ax.tick_params(axis="both", labelsize=9)
         ax.grid(True, alpha=0.25)
     axes[-1].set_xlabel("HASDM altitude (km)", fontsize=10)
@@ -1192,8 +1255,8 @@ def plot_correlation_by_altitude(df: pl.DataFrame, altitudes: list[int]) -> None
     )
     axes[0].add_artist(driver_legend)
     add_record_length_legend(axes[0], observed_duration_bins)
-    fig.suptitle("Mauna Loa correlation by HASDM altitude", fontsize=11)
-    save_and_close(fig, CORRELATION_DIR / "maunaloa_correlation_by_altitude.pgf")
+    fig.suptitle(title, fontsize=11)
+    save_and_close(fig, CORRELATION_DIR / filename)
 
 
 def metric_plot_path(
@@ -1853,6 +1916,14 @@ def main() -> None:
     )
     plot_density_scatter_by_altitude(df, altitudes)
     plot_correlation_by_altitude(all_altitude_df, all_altitudes)
+    plot_paper_candidate_figure_3(all_altitude_df, all_altitudes)
+    plot_correlation_by_altitude(
+        all_altitude_df,
+        all_altitudes,
+        PAPER_CANDIDATE_FIGURE_4_CAUSES,
+        "paper_candidate_figure_4_altitude_relationship_summary.pgf",
+        "Paper candidate Figure 4: altitude relationship summary",
+    )
     plot_density_co2_correlation_heatmaps(
         all_altitude_df,
         all_altitudes,
