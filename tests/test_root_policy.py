@@ -35,6 +35,9 @@ def test_tracked_repository_root_uses_the_code_first_allowlist() -> None:
 
 def test_tracked_tree_excludes_private_and_generated_artifacts() -> None:
     repository_root = Path(__file__).resolve().parents[1]
+    curated_public_data = {
+        "data/derived/literature/brown_2024_figure2_digitized.csv",
+    }
     forbidden_prefixes = (
         "data/",
         "kaggle/",
@@ -66,10 +69,13 @@ def test_tracked_tree_excludes_private_and_generated_artifacts() -> None:
     offenders = sorted(
         path
         for path in tracked_files
-        if path.startswith(forbidden_prefixes)
-        or path.lower().endswith(forbidden_suffixes)
-        or "cookie" in Path(path).name.lower()
-        or Path(path).name == ".env"
+        if path not in curated_public_data
+        and (
+            path.startswith(forbidden_prefixes)
+            or path.lower().endswith(forbidden_suffixes)
+            or "cookie" in Path(path).name.lower()
+            or Path(path).name == ".env"
+        )
     )
 
     assert offenders == []
