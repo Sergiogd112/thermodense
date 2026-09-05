@@ -19,7 +19,7 @@ import resource
 import shutil
 import sys
 import time
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeAlias, cast
 import warnings
 
 from filelock import FileLock, Timeout
@@ -44,6 +44,7 @@ DEFAULT_METHODS = ("parcorr",)
 DEFERRED_METHODS = {"gpdc": "explicitly deferred for real-data PCMCI+ runs"}
 DEFAULT_TAU_MAX = 180
 DEFAULT_CMIKNN_WORKERS = 24
+_GATED_ARTIFACT_VALIDATION_ERRORS = (OSError, ValueError)
 MISSING_FLAG = -999999.0
 SEED = 20260802
 ROLLING_WINDOW = 1095
@@ -55,8 +56,8 @@ CENTERED_81_DAY = "centered_81_day"
 DETRENDED_ANOMALY = "detrended_anomaly"
 SEASONAL_ANOMALY = "seasonal_anomaly"
 
-type F107TimingVariant = Literal["raw_observed_daily", "centered_81_day"]
-type PreprocessingProfile = Literal["detrended_anomaly", "seasonal_anomaly"]
+F107TimingVariant: TypeAlias = Literal["raw_observed_daily", "centered_81_day"]  # noqa: UP040 -- retain Python 3.11 runtime compatibility
+PreprocessingProfile: TypeAlias = Literal["detrended_anomaly", "seasonal_anomaly"]  # noqa: UP040 -- retain Python 3.11 runtime compatibility
 
 
 @dataclass(frozen=True)
@@ -1732,7 +1733,7 @@ def _validate_gated_stage_result(
             == ["graph", "node_names", "p_matrix", "val_matrix"]
             and runtime.compact_result_digest(matrices) == result.get("result_digest")
         )
-    except OSError, ValueError:
+    except _GATED_ARTIFACT_VALIDATION_ERRORS:
         return False
 
 

@@ -29,6 +29,8 @@ THREAD_ENVIRONMENT = (
 )
 
 CMIKNN_MAX_TAU_STEPS = 10
+_GIT_COMMIT_ERRORS = (OSError, subprocess.SubprocessError)
+_ISOLATED_PAYLOAD_ERRORS = (IndexError, json.JSONDecodeError)
 
 
 def validate_cmiknn_tau(method: str, tau_max: int) -> None:
@@ -197,7 +199,7 @@ def git_commit() -> str | None:
             text=True,
             timeout=5,
         )
-    except OSError, subprocess.SubprocessError:
+    except _GIT_COMMIT_ERRORS:
         return None
     if result.returncode != 0:
         return None
@@ -261,7 +263,7 @@ def run_isolated_process(
         }
     try:
         payload = json.loads(stdout.strip().splitlines()[-1])
-    except IndexError, json.JSONDecodeError:
+    except _ISOLATED_PAYLOAD_ERRORS:
         return {
             "status": "failed",
             "failure_reason": f"child produced no valid result (exit {process.returncode}): {stderr.strip()[-300:]}",
