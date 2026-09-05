@@ -1,4 +1,5 @@
 .cache/
+.idea/
 .ipynb_checkpoints/
 __pycache__/
 .pytest_cache/
@@ -12,9 +13,15 @@ node_modules/
 /dist/
 *.egg-info/
 # Runtime and generated data layers.
-/data/
+/data/*
+!/data/derived/
+/data/derived/*
+!/data/derived/literature/
+/data/derived/literature/*
+!/data/derived/literature/brown_2024_figure2_digitized.csv
 /runs/
 /outputs/
+/.worktrees/
 /thesis/
 /presentation/
 /papers/
@@ -22,6 +29,9 @@ node_modules/
 .kilo/plans
 *.log
 *.pid
+**/.gpdctorch-*.lock
+*.sqlite3-shm
+*.sqlite3-wal
 *.pdf
 /src/thermodense/figure_review/figures/
 *.aux

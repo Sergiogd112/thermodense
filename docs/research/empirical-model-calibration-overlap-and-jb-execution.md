@@ -175,7 +175,7 @@ SET currently publishes:
   oriented; the official page does not document a general arbitrary-point
   Python API;[^set-modern-jb]
 - a separate validation archive with expected output grids;[^set-modern-jb]
-- live SOLFSMY, Ap, Dst, and dTc index files, with a documented 45-day lag.[^set-indices]
+- live SOLFSMY, Ap, Dst, and dTc index links, with a documented 45-day lag.[^set-indices]
 
 The archives inspected on 2026-08-03 had SHA-256
 `0b310c9e259b5ca9285d570610d52afa5964d82506ea4fb43e995a8332535d6a`
@@ -194,6 +194,28 @@ the complete Fortran source, calling convention, and official test case.[^jb2006
 The test case expects density `0.4066D-11 kg m-3` at its stated date, geometry,
 and indices. JB2006 uses one-day-lag F10/S10, five-day-lag M10, and Ap at a
 6.7-hour lag; these conventions differ from JB2008.[^jb2006-code]
+
+### Local execution record
+
+An ignored local wrapper now calls the unmodified provider routines for both
+models at 19.5362° N, 204.4237° E and 125–825 km in 25-km steps. The JB2006
+official test reproduces `0.4066D-11 kg m-3`; the JB2008 source compiles and
+reproduces the validation grid structure, although revised live indices no
+longer reproduce the archive's stale September-2023 values byte-for-byte. The
+wrapper converts the WGS-84 geodetic site latitude to each model's required
+geocentric latitude separately at every altitude.
+
+The live `SOLRESAP.TXT` retrieved for this run contained only 33 records ending
+on 1997 day 6, so it could not support the selected record. JB2006 therefore
+uses the repository's CelesTrak three-hour Ap observations, mechanically written
+in the fixed format consumed by SET's unmodified `SOLFLUX` routine. SET
+`SOLFSMY.TXT` supplies F10/S10/M10/Y10, and SET `DTCFILE.TXT` supplies JB2008
+dTc. The paired output covers 1997-01-06 through 2026-04-19; CelesTrak's current
+contiguous observed record fixes the endpoint. Both models omit 1998-05-17
+through 1999-03-15 because required SET solar proxies are below the official
+driver's `<40` validity threshold. Source, index, compiler, transformation, and
+output checksums are recorded in the ignored output provenance. This local
+execution record does not resolve permission to distribute the wrapper.
 
 ### License decision
 

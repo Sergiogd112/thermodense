@@ -62,13 +62,19 @@
     },
     {
       "id": "fig-6", "number": 6, "title": "Secular density trend comparison",
-      "role_message": "The paper-organizing result: compare original thesis/literature framing with updated solar-adjusted altitude-resolved estimates and Brown et al. 2024 context.",
-      "panel_layout_contract": "Side-by-side original thesis/literature view and updated solar-adjusted altitude-resolved estimates with Brown et al. 2024 context.",
-      "datasets": ["thesis/literature trend sources", "updated density products", "Brown et al. 2024"],
+      "role_message": "The paper-organizing result: present a vector reconstruction of Brown et al. 2024 Figure 2's literature altitude profile beside updated solar-adjusted altitude-resolved estimates.",
+      "panel_layout_contract": "Two directly adjacent equal-width axes share a fixed 0–850 km altitude axis. Panel A is rendered from plot-precision values vector-extracted from Brown et al. 2024 Figure 2, with its 16-study four-column legend in the empty 740–850 km band; it is not original study data. Panel B shows Thermodense's updated solar-adjusted altitude-resolved estimates including paired JB2006/JB2008 Mauna Loa baselines.",
+      "datasets": ["Brown et al. 2024 Figure 2 literature profiles", "updated density products", "JB2006", "JB2008"],
       "variables_analysis": ["secular density trend", "percent per decade", "solar-adjusted altitude-resolved estimates"],
       "uncertainty_encodings": ["HAC 95% intervals", "record-length markers"],
-      "existing_producers": ["scripts/recreate_brown_density_trend_current.py"],
-      "implementation_status_blockers": "Updated comparison composition and source/provenance audit remain before rendering.",
+      "existing_producers": ["scripts/generate_maunaloa_msis_full_history.py", "scripts/recreate_brown_density_trend_current.py", "scripts/compose_density_trend_figure6.py"],
+      "implementation_status_blockers": "The fail-closed Figure 6 compositor and full-history 1967–2026 MSIS producer are implemented. The validated local external JB pair covers 1997-01-06 through 2026-04-19 at identical 125–825 km altitudes, excluding 1998-05-17 through 1999-03-15 for both models under the official SET proxy-validity threshold. Its contract includes date, F10.7_OBS_CENTER81, jb2006_log10rho_daily_mean_<alt>km, and jb2008_log10rho_daily_mean_<alt>km. Final output may never include only one JB model. Portability remains gated by SET wrapper-distribution permission: do not add provider software, indices, or translated JB code. Panel A uses data/derived/literature/brown_2024_figure2_digitized.csv: 427 plot-precision values vector-extracted from Brown Figure 2 for 16 studies under CC BY 4.0 (repository SHA-256 checksum 1fafa2718250adcd01677d4c9257cef4f72d3e7d654a7a14accc2c8cdc216583), not replacements for original study data. The external publisher PDF remains provenance/reference only; do not infer altitude profiles from Brown's 400-km tables.",
+      "compositor_contract": ".venv/bin/python -m scripts.recreate_brown_density_trend_current --require-jb --jb-path PATH then .venv/bin/python -m scripts.compose_density_trend_figure6 --require-jb [--brown-data PATH] [--trend-csv PATH] [--output-dir PATH] (scripts/compose_density_trend_figure6.py) vector-renders the bundled Brown reconstruction at x=-7..1 with its study legend, shares a 0–850 km altitude axis, and preserves Panel B as vector PDF. The no-flag compositor output is a draft.",
+      "output_contract": ["density_trend_figure6.png", "density_trend_figure6.pdf", "density_trend_figure6_caption.txt", "density_trend_figure6_alt_text.txt", "density_trend_figure6_provenance.json"],
+      "brown_pdf_sha256": "ac2f2097d3ee28b85bce2e7d082af7e4203459c87e16408480fbdfefa9c392ea",
+      "brown_digitized_csv": "data/derived/literature/brown_2024_figure2_digitized.csv",
+      "brown_digitized_csv_sha256": "1fafa2718250adcd01677d4c9257cef4f72d3e7d654a7a14accc2c8cdc216583",
+      "brown_digitized_presentation_source_sha256": "1bd91d049f801edba688aabf49952cf8a7a553a5e4b9c47c5ba59909d6a5a7e2",
       "may_move_to_appendix": false
     }
   ]

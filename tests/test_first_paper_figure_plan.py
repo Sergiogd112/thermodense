@@ -45,6 +45,73 @@ def test_first_paper_plan_records_resolved_figure_decisions():
     assert "paper-organizing result" in figures[6]["role_message"]
 
 
+def test_figure_six_requires_brown_digitized_profile_provenance_before_rendering():
+    figure_six = next(
+        figure for figure in load_plan()["figures"] if figure["number"] == 6
+    )
+    plan_text = (
+        Path(__file__).resolve().parents[1] / "docs/first-paper-figure-plan.md"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        "Panel A is rendered from plot-precision values vector-extracted from Brown et al. 2024 Figure 2"
+        in figure_six["panel_layout_contract"]
+    )
+    assert (
+        "Panel B shows Thermodense's updated solar-adjusted"
+        in figure_six["panel_layout_contract"]
+    )
+    assert (
+        "brown_2024_figure2_digitized.csv"
+        in figure_six["implementation_status_blockers"]
+    )
+    assert "checksum" in figure_six["implementation_status_blockers"]
+    assert (
+        "not replacements for original study data"
+        in figure_six["implementation_status_blockers"]
+    )
+    assert (
+        "do not infer altitude profiles from Brown's 400-km tables"
+        in figure_six["implementation_status_blockers"]
+    )
+    assert "presentation-derived digitized CSV" in plan_text
+    assert "not replacements for the original study data" in plan_text
+
+
+def test_figure_six_plan_declares_vector_compositor_and_verified_source_checksums():
+    figure_six = next(
+        figure for figure in load_plan()["figures"] if figure["number"] == 6
+    )
+
+    assert "compose_density_trend_figure6.py" in figure_six["compositor_contract"]
+    assert "--require-jb" in figure_six["compositor_contract"]
+    assert (
+        "jb2006_log10rho_daily_mean_<alt>km"
+        in figure_six["implementation_status_blockers"]
+    )
+    assert (
+        "Final output may never include only one JB model"
+        in figure_six["implementation_status_blockers"]
+    )
+    assert figure_six["brown_pdf_sha256"] == (
+        "ac2f2097d3ee28b85bce2e7d082af7e4203459c87e16408480fbdfefa9c392ea"
+    )
+    assert figure_six["brown_digitized_csv_sha256"] == (
+        "1fafa2718250adcd01677d4c9257cef4f72d3e7d654a7a14accc2c8cdc216583"
+    )
+    assert figure_six["brown_digitized_presentation_source_sha256"] == (
+        "1bd91d049f801edba688aabf49952cf8a7a553a5e4b9c47c5ba59909d6a5a7e2"
+    )
+    assert "--brown-pdf" not in figure_six["compositor_contract"]
+    assert figure_six["output_contract"] == [
+        "density_trend_figure6.png",
+        "density_trend_figure6.pdf",
+        "density_trend_figure6_caption.txt",
+        "density_trend_figure6_alt_text.txt",
+        "density_trend_figure6_provenance.json",
+    ]
+
+
 def test_selected_figure_layout_helpers_are_fixed_to_the_plan_contract():
     assert paper_candidate_figure_3_layout() == (
         [

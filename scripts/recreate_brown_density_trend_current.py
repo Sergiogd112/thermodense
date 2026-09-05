@@ -18,6 +18,7 @@ to the trend definitions summarized by Brown et al. (2024).
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -43,6 +44,10 @@ TUDELFT_PATH = Path(
 )
 MSIS_PATH = Path(
     "outputs/figures/results/maunaloa_msis_density_baselines/data/maunaloa_msis_density_baselines_daily_wide.parquet"
+)
+JB_PATH = Path(
+    "outputs/figures/results/maunaloa_jb_density_baselines/data/"
+    "maunaloa_jb_density_baselines_daily_wide.parquet"
 )
 SPACE_WEATHER_PATH = SPACE_WEATHER_CSV_PATH
 
@@ -102,6 +107,8 @@ DATASET_LINESTYLES = {
     "NRLMSISE-00 Mauna Loa baseline": ":",
     "NRLMSIS 2.0 Mauna Loa baseline": "-.",
     "NRLMSIS 2.1 Mauna Loa baseline": (0, (3, 1, 1, 1, 1, 1)),
+    "JB2006 Mauna Loa baseline": ":",
+    "JB2008 Mauna Loa baseline": (0, (5, 2, 1, 2)),
 }
 DATASET_LABELS = {
     "Global mean thermospheric density": "Gbl. Mean",
@@ -110,6 +117,8 @@ DATASET_LABELS = {
     "NRLMSISE-00 Mauna Loa baseline": "NRLMSISE-00",
     "NRLMSIS 2.0 Mauna Loa baseline": "NRLMSIS 2.0",
     "NRLMSIS 2.1 Mauna Loa baseline": "NRLMSIS 2.1",
+    "JB2006 Mauna Loa baseline": "JB2006",
+    "JB2008 Mauna Loa baseline": "JB2008",
 }
 
 DATASET_COLORS = {
@@ -119,6 +128,8 @@ DATASET_COLORS = {
     "NRLMSISE-00 Mauna Loa baseline": "#9467bd",
     "NRLMSIS 2.0 Mauna Loa baseline": "#8c564b",
     "NRLMSIS 2.1 Mauna Loa baseline": "#d62728",
+    "JB2006 Mauna Loa baseline": "#17becf",
+    "JB2008 Mauna Loa baseline": "#bcbd22",
 }
 
 DURATION_MARKERS = {
@@ -570,23 +581,86 @@ def msis_specs() -> list[SeriesSpec]:
     return specs
 
 
-def collect_trends() -> pl.DataFrame:
-    """Load all products, fit solar-adjusted trends, and return a table."""
+def jb_specs(path: Path = JB_PATH) -> list[SeriesSpec]:
+    """Build paired JB trend specifications from externally generated outputs.
 
-    required_paths = [
+    This seam deliberately consumes provider-model output only. It neither
+    executes, translates, nor supplies JB2006/JB2008 software or indices.
+    """
+
+    df = pl.read_parquet(path)
+    required = {"date", F107_COL}
+    missing = sorted(required - set(df.columns))
+    if missing:
+        raise ValueError(
+            f"JB daily-wide Parquet is missing required columns: {', '.join(missing)}"
+        )
+    df = df.with_columns(pl.col("date").cast(pl.Date))
+    models = {
+        "JB2006 Mauna Loa baseline": "jb2006_log10rho_daily_mean_",
+        "JB2008 Mauna Loa baseline": "jb2008_log10rho_daily_mean_",
+    }
+    columns_by_dataset: dict[str, dict[float, str]] = {}
+    for dataset, prefix in models.items():
+        columns: dict[float, str] = {}
+        for column in df.columns:
+            if not column.startswith(prefix) or not column.endswith("km"):
+                continue
+            try:
+                altitude = float(column[len(prefix) : -2])
+            except ValueError as error:
+                raise ValueError(f"Invalid JB altitude column: {column}") from error
+            columns[altitude] = column
+        columns_by_dataset[dataset] = columns
+
+    jb2006, jb2008 = (columns_by_dataset[dataset] for dataset in models)
+    if not jb2006 or not jb2008:
+        missing_models = [
+            dataset for dataset, columns in columns_by_dataset.items() if not columns
+        ]
+        raise ValueError(
+            "JB daily-wide Parquet requires the paired JB2006/JB2008 model families; "
+            f"missing: {', '.join(missing_models)}"
+        )
+    if set(jb2006) != set(jb2008):
+        raise ValueError(
+            "JB2006 and JB2008 daily-wide columns must have identical altitude sets"
+        )
+    return [
+        SeriesSpec(dataset, altitude, "date", columns[altitude], df)
+        for dataset, columns in columns_by_dataset.items()
+        for altitude in sorted(columns)
+    ]
+
+
+def required_input_paths(
+    require_jb: bool = False, jb_path: Path = JB_PATH
+) -> tuple[Path, ...]:
+    """Return the processed inputs read by ``collect_trends``."""
+    paths = (
         GLOBAL_MEAN_PATH,
         HASDM_PATH,
-        TUDELFT_PATH,
+        *(path for _, path, _ in TUDELFT_MISSIONS),
         MSIS_PATH,
         SPACE_WEATHER_PATH,
+    )
+    return (*paths, jb_path) if require_jb else paths
+
+
+def collect_trends(require_jb: bool = False, jb_path: Path = JB_PATH) -> pl.DataFrame:
+    """Load all products, fit solar-adjusted trends, and return a table."""
+
+    missing = [
+        str(path)
+        for path in required_input_paths(require_jb=require_jb, jb_path=jb_path)
+        if not path.exists()
     ]
-    missing = [str(path) for path in required_paths if not path.exists()]
     if missing:
         raise FileNotFoundError(
             "Missing required processed data files: " + ", ".join(missing)
         )
 
-    specs = [
+    specs: list[SeriesSpec] = [
         *global_mean_specs(),
         *long_altitude_specs(
             HASDM_PATH,
@@ -597,21 +671,22 @@ def collect_trends() -> pl.DataFrame:
         *tudelft_specs(),
         *msis_specs(),
     ]
+    # An available external JB file is always treated as a paired input. This
+    # rejects a singleton even for a draft invocation, rather than plotting it.
+    if require_jb or jb_path.exists():
+        specs.extend(jb_specs(jb_path))
     rows = [trend for spec in specs if (trend := fit_trend(spec)) is not None]
     if not rows:
         raise RuntimeError("No trend estimates were produced.")
     return pl.DataFrame(rows).sort(["dataset", "altitude_km"])
 
 
-def save_outputs(trends: pl.DataFrame) -> None:
-    """Write trends and plot all estimates with asymmetric HAC 95% intervals."""
-
-    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
-    trends.write_csv(OUTPUT_ROOT / "current_density_trends_by_dataset_altitude.csv")
-
-    fig, ax = plt.subplots(figsize=(6, 7), constrained_layout=False)
-    fig.subplots_adjust(left=0.18, right=0.96, bottom=0.09, top=0.72)
-
+def plot_trends(
+    ax: plt.Axes,
+    trends: pl.DataFrame,
+    altitude_limits: tuple[float, float] | None = None,
+) -> tuple[list[Line2D], list[Line2D]]:
+    """Plot trends, optionally using supplied altitude limits, and return handles."""
     x_all = np.concatenate(
         [
             trends["trend_percent_per_decade"].to_numpy().astype(float),
@@ -690,7 +765,10 @@ def save_outputs(trends: pl.DataFrame) -> None:
             )
 
     ax.set_xlim(x_left, x_right)
-    ax.set_ylim(bottom=150.0)
+    if altitude_limits is None:
+        ax.set_ylim(bottom=150.0)
+    else:
+        ax.set_ylim(*altitude_limits)
     ax.set_xlabel("Solar-adjusted density trend (%/dec)")
     ax.set_ylabel("Altitude (km)")
     ax.grid(True, which="major", alpha=0.25)
@@ -723,6 +801,18 @@ def save_outputs(trends: pl.DataFrame) -> None:
         )
         for bin_start in sorted(set(trends["duration_bin_years"].to_list()))
     ]
+    return dataset_handles, duration_handles
+
+
+def save_outputs(trends: pl.DataFrame) -> None:
+    """Write trends and plot all estimates with asymmetric HAC 95% intervals."""
+
+    OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
+    trends.write_csv(OUTPUT_ROOT / "current_density_trends_by_dataset_altitude.csv")
+
+    fig, ax = plt.subplots(figsize=(6, 7), constrained_layout=False)
+    fig.subplots_adjust(left=0.18, right=0.96, bottom=0.09, top=0.72)
+    dataset_handles, duration_handles = plot_trends(ax, trends)
 
     dataset_legend = fig.legend(
         handles=dataset_handles,
@@ -761,10 +851,20 @@ def save_outputs(trends: pl.DataFrame) -> None:
     plt.close(fig)
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the trend-estimator command line."""
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--require-jb", action="store_true")
+    parser.add_argument("--jb-path", type=Path, default=JB_PATH)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> None:
     """Command-line entry point."""
 
-    trends = collect_trends()
+    args = parse_args(argv)
+    trends = collect_trends(require_jb=args.require_jb, jb_path=args.jb_path)
     save_outputs(trends)
     print(f"Saved {trends.height} trend estimates to {OUTPUT_ROOT}")
 
