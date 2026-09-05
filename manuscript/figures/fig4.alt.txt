@@ -1,0 +1,1 @@
+Two altitude panels show colored, marked correlation profiles with 95 percent horizontal intervals and a gray near-zero band.

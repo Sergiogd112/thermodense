@@ -1,0 +1,1 @@
+Two altitude profiles compare F10.7 correlations for Global mean, HASDM, three NRLMSIS products, JB2006 and JB2008, using color, marker, and line style.

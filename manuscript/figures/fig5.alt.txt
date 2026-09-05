@@ -1,0 +1,1 @@
+Four altitude-profile panels show five empirical models, error intervals, and filled circles identifying FDR-retained centered-F10.7 or Ap leakage links; open circles are non-retained.

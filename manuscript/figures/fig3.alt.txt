@@ -1,0 +1,1 @@
+A 4 by 4 grid of blue points showing four density targets against F10.7, Ap, CO2, and explicitly labelled nearest-139-km SABER cooling.

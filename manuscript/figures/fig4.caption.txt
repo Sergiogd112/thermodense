@@ -1,0 +1,1 @@
+Altitude profiles of pairwise Pearson correlations for daily mean and range diagnostics with CO2, SABER cooling nearest 139 km, solar, and geomagnetic context. Shading marks the near-zero reference band and horizontal intervals are Fisher 95% intervals; these are descriptive associations.

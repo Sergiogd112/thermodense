@@ -1,0 +1,1 @@
+Date–altitude availability rectangles for canonical regular/gridded density products and each of the eight TU Delft missions. Rectangle extent denotes available records only and is not evidence of a density response.

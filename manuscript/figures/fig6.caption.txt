@@ -1,0 +1,1 @@
+Two-panel density-trend synthesis. Panel A vector-renders plot-precision values digitized from Brown et al. (2024) Figure 2 under CC BY 4.0 and is not replacement study data. Panel B shows solar-adjusted log10-density trends with 27-day HAC 95% intervals and paired JB2006/JB2008; trends are descriptive, not CO2-only estimates.

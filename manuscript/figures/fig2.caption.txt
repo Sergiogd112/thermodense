@@ -1,0 +1,1 @@
+Pearson correlations of centered 81-day F10.7 with daily mean log10 density and daily within-day log10-density range by altitude. Horizontal bars are Fisher 95% intervals; product-specific date and row support are retained. TU Delft is omitted because a comparable mission-aware daily aggregation was not precomputed.

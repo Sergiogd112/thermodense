@@ -1,0 +1,1 @@
+Points-only descriptive scatter matrix. Rows are HASDM daily mean log10 density and within-day log10 range at 175 and 825 km; columns are centered-81 F10.7, Ap, Mauna Loa CO2, and SABER CO2 cooling aggregated at the available altitude nearest 139 km. Pairwise missing values are omitted.

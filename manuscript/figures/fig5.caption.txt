@@ -1,0 +1,1 @@
+On the exact common five-model sample, signed median log-density-ratio error and median absolute error are plotted with precomputed 95% block-bootstrap intervals. Centered-81 F10.7 and Ap residual leakage panels use filled circles for FDR-retained links and open circles for non-retained links; zero means no retained link, not independence or a universal ranking.
