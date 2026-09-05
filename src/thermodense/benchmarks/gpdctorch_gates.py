@@ -25,6 +25,7 @@ CAPABILITY_TIMEOUT_SECONDS = 5 * 60 * 60
 PRIMARY_TIMEOUT_SECONDS = 24 * 60 * 60
 STATE_SCHEMA_VERSION = "1"
 STAGES = ("capability", "primary", "raw_seasonal", "centered_detrended", "interaction")
+_LEGACY_TIGRAMITE_PIN_ERRORS = (OSError, subprocess.SubprocessError)
 
 
 class GateError(ValueError):
@@ -410,7 +411,7 @@ def _legacy_tigramite_pin(git_commit: Any, pin: str) -> bool:
             timeout=5,
             check=False,
         )
-    except OSError, subprocess.SubprocessError:
+    except _LEGACY_TIGRAMITE_PIN_ERRORS:
         return False
     return result.returncode == 0 and f'rev = "{pin}"' in result.stdout
 
