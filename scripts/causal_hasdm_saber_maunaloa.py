@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -27,6 +28,17 @@ HASDM_LON_COL = "Longitude (deg)"
 HASDM_ALT_COL = "Altitude (m)"
 HASDM_DENSITY_COL = "Density (kg/m^3)"
 MAX_VALID_HASDM_DENSITY = 1.0e-8
+
+
+def prepare_hasdm_only_requested(args: list[str]) -> bool:
+    """Return whether ``args`` selects the standalone HASDM preparation path."""
+    if not args:
+        return False
+    if args == ["--prepare-hasdm-only"]:
+        return True
+    raise ValueError(
+        "Unsupported arguments. Use --prepare-hasdm-only or run without arguments."
+    )
 
 
 def parse_env_date(name: str) -> date | None:
@@ -330,6 +342,21 @@ def load_hasdm_maunaloa_daily() -> tuple[pl.DataFrame, list[str], list[int], lis
         encoding="utf-8",
     )
     return wide, selected_density_cols, altitudes, selected_altitudes
+
+
+if __name__ == "__main__" and prepare_hasdm_only_requested(sys.argv[1:]):
+    _, _, hasdm_altitudes, selected_hasdm_altitudes = load_hasdm_maunaloa_daily()
+    print(
+        f"HASDM daily long output: {OUTPUT_DIR / 'hasdm_maunaloa_daily_long.parquet'}"
+    )
+    print(
+        f"HASDM daily wide output: {OUTPUT_DIR / 'hasdm_maunaloa_daily_wide.parquet'}"
+    )
+    print(
+        "HASDM altitude summary: "
+        f"available km={hasdm_altitudes}; selected km={selected_hasdm_altitudes}"
+    )
+    raise SystemExit(0)
 
 
 def load_saber_maunaloa_daily() -> tuple[pl.DataFrame, dict[str, float]]:

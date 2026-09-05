@@ -7,7 +7,7 @@ This module provides download functions for external datasets:
 - Space weather indices (solar flux, geomagnetic activity)
 - CO2 measurements (NOAA global and Mauna Loa)
 - HASDM monthly archive files
-- SABER carbon-dioxide cooling-rate profiles
+- SABER carbon-dioxide and nitric-oxide cooling-rate profiles and selected Level2A files
 
 Each download function maintains a manifest file that tracks the status
 of all files (downloaded, skipped, or failed) with timestamps and URLs.
@@ -24,7 +24,7 @@ Example:
         download_space_weather,
         download_co2,
         download_hasdm,
-        download_saber_co2_cooling,
+        download_saber_co2_cooling, download_saber_no_cooling, download_saber_l2a,
     )
     from thermodense.downloader.counter import Counters
 
@@ -61,7 +61,11 @@ from .global_density import download_global_density
 from .space_weather import download_space_weather
 from .co2 import download_co2
 from .hasdm import download_hasdm
-from .saber import download_saber_co2_cooling
+from .saber import (
+    download_saber_co2_cooling,
+    download_saber_l2a,
+    download_saber_no_cooling,
+)
 
 __all__ = [
     "Counters",
@@ -73,4 +77,6 @@ __all__ = [
     "download_co2",
     "download_hasdm",
     "download_saber_co2_cooling",
+    "download_saber_no_cooling",
+    "download_saber_l2a",
 ]
