@@ -6,8 +6,20 @@ Recreates the seasonal variation comparison figure from Emmert et al. 2020.
 import polars as pl
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import List, Tuple, Optional
+from dataclasses import dataclass
+from typing import List, Tuple, Optional, Sequence
 from tqdm import tqdm
+
+
+@dataclass(frozen=True)
+class ModelSeries:
+    """One model log-density-ratio series to render in Figure 19."""
+
+    column: str
+    display_name: str
+    color: str
+    marker: str
+    markerfacecolor: Optional[str] = None
 
 
 def create_figure_19(
@@ -20,6 +32,7 @@ def create_figure_19(
     errorbar_mode: str = "uncertainty_of_mean",
     figsize: Tuple[float, float] = None,
     save_path: str = None,
+    additional_model_series: Sequence[ModelSeries] = (),
 ) -> plt.Figure:
     """
     Recreate Figure 19 from Emmert et al. 2020 NRLMSIS 2.0 paper.
@@ -43,6 +56,9 @@ def create_figure_19(
         Column name for MSIS 2.0 ln(ρ_mod/ρ_obs) values
     msis_21_col : str, optional
         Column name for MSIS 2.1 ln(ρ_mod/ρ_obs) values. If None, MSIS 2.1 is not plotted.
+    additional_model_series : Sequence[ModelSeries], optional
+        Ordered extra model ln(ρ_mod/ρ_obs) series. Each series is included in
+        aggregation, error bars, plotting, and the legend.
     errorbar_mode : str
         "uncertainty_of_mean" computes 1σ uncertainty from daily/bin means as
         std(daily_means) / sqrt(n_days), matching the paper convention.
@@ -94,15 +110,15 @@ def create_figure_19(
     if n_rows == 1:
         axes = axes.reshape(1, -1)
 
-    # Color scheme matching the paper + blue for MSIS 2.1
-    msis_00_color = "red"
-    msis_20_color = "green"
-    msis_21_color = "blue"
-    matlab_color = "#EDB120"
-    msis_00_marker = "x"
-    msis_20_marker = "^"
-    msis_21_marker = "o"
-    matlab_marker = "s"
+    # Color scheme matching the paper + blue for MSIS 2.1.
+    model_series = [
+        ModelSeries(msis_00_col, "NRLMSISE-00", "red", "x"),
+        ModelSeries(msis_20_col, "NRLMSIS 2.0", "green", "^", "none"),
+    ]
+    if msis_21_col:
+        model_series.append(
+            ModelSeries(msis_21_col, "NRLMSIS 2.1", "blue", "o", "none")
+        )
 
     # Process each mission (row)
     for row_idx, (df, mission_name) in tqdm(
@@ -110,18 +126,26 @@ def create_figure_19(
         total=n_rows,
         desc="Processing missions for figure 19",
     ):
+        has_matlab = matlab_col is not None and matlab_col in df.columns
+        mission_model_series = model_series.copy()
+        if has_matlab:
+            mission_model_series.append(
+                ModelSeries(matlab_col, "MATLAB (MSISE-00)", "#EDB120", "s", "none")
+            )
+        mission_model_series.extend(additional_model_series)
+        series_with_aliases = [
+            (series, f"model_{index}")
+            for index, series in enumerate(mission_model_series)
+        ]
+
         # Build column selection list
-        cols_to_select = ["timestamp", "f107a", msis_00_col, msis_20_col]
+        cols_to_select = ["timestamp", "f107a"] + [
+            series.column for series, _ in series_with_aliases
+        ]
         max_alt = df.select(pl.col("Altitude (m)").max()).item()
         min_alt = df.select(pl.col("Altitude (m)").min()).item()
         timestart = df.select(pl.col("timestamp").min()).item()
         timeend = df.select(pl.col("timestamp").max()).item()
-        if msis_21_col:
-            cols_to_select.append(msis_21_col)
-        has_matlab = matlab_col is not None and matlab_col in df.columns
-        if has_matlab:
-            cols_to_select.append(matlab_col)
-
         # Sample if too large
         smaller_df = df.select(cols_to_select)
         # Use 12 fixed 30.5-day bins across the year, matching the paper.
@@ -143,21 +167,15 @@ def create_figure_19(
             filtered = df_with_bins.filter(f107_filter)
 
             if len(filtered) > 0:
-                metric_cols = [
-                    (msis_00_col, "msis_00"),
-                    (msis_20_col, "msis_20"),
-                ]
-                if msis_21_col:
-                    metric_cols.append((msis_21_col, "msis_21"))
-                if has_matlab:
-                    metric_cols.append((matlab_col, "matlab"))
-
                 if errorbar_mode == "uncertainty_of_mean":
                     daily = filtered.group_by(["seasonal_bin", "date_bin"]).agg(
-                        [pl.col(col).mean().alias(alias) for col, alias in metric_cols]
+                        [
+                            pl.col(series.column).mean().alias(alias)
+                            for series, alias in series_with_aliases
+                        ]
                     )
                     agg_exprs = []
-                    for _, alias in metric_cols:
+                    for _, alias in series_with_aliases:
                         agg_exprs.extend(
                             [
                                 pl.col(alias).mean().alias(f"{alias}_mean"),
@@ -167,7 +185,9 @@ def create_figure_19(
                                 ).alias(f"{alias}_std"),
                             ]
                         )
-                    agg_exprs.append(pl.col(metric_cols[0][1]).count().alias("count"))
+                    agg_exprs.append(
+                        pl.col(series_with_aliases[0][1]).count().alias("count")
+                    )
                     binned = (
                         daily.group_by("seasonal_bin")
                         .agg(agg_exprs)
@@ -175,17 +195,19 @@ def create_figure_19(
                     )
                 elif errorbar_mode == "raw_observation_uncertainty":
                     agg_exprs = []
-                    for col, alias in metric_cols:
+                    for series, alias in series_with_aliases:
                         agg_exprs.extend(
                             [
-                                pl.col(col).mean().alias(f"{alias}_mean"),
+                                pl.col(series.column).mean().alias(f"{alias}_mean"),
                                 (
-                                    pl.col(col).std().fill_null(0)
+                                    pl.col(series.column).std().fill_null(0)
                                     / pl.col("date_bin").n_unique().sqrt()
                                 ).alias(f"{alias}_std"),
                             ]
                         )
-                    agg_exprs.append(pl.col(msis_00_col).count().alias("count"))
+                    agg_exprs.append(
+                        pl.col(series_with_aliases[0][0].column).count().alias("count")
+                    )
                     binned = (
                         filtered.group_by("seasonal_bin")
                         .agg(agg_exprs)
@@ -193,16 +215,21 @@ def create_figure_19(
                     )
                 elif errorbar_mode == "paper":
                     agg_exprs = []
-                    for col, alias in metric_cols:
+                    for series, alias in series_with_aliases:
                         agg_exprs.extend(
                             [
-                                pl.col(col).mean().alias(f"{alias}_mean"),
-                                (pl.col(col).pow(2).mean() - pl.col(col).mean().pow(2))
+                                pl.col(series.column).mean().alias(f"{alias}_mean"),
+                                (
+                                    pl.col(series.column).pow(2).mean()
+                                    - pl.col(series.column).mean().pow(2)
+                                )
                                 .sqrt()
                                 .alias(f"{alias}_std"),
                             ]
                         )
-                    agg_exprs.append(pl.col(msis_00_col).count().alias("count"))
+                    agg_exprs.append(
+                        pl.col(series_with_aliases[0][0].column).count().alias("count")
+                    )
                     binned = (
                         filtered.group_by("seasonal_bin")
                         .agg(agg_exprs)
@@ -211,14 +238,19 @@ def create_figure_19(
 
                 else:
                     agg_exprs = []
-                    for col, alias in metric_cols:
+                    for series, alias in series_with_aliases:
                         agg_exprs.extend(
                             [
-                                pl.col(col).mean().alias(f"{alias}_mean"),
-                                pl.col(col).std().fill_null(0).alias(f"{alias}_std"),
+                                pl.col(series.column).mean().alias(f"{alias}_mean"),
+                                pl.col(series.column)
+                                .std()
+                                .fill_null(0)
+                                .alias(f"{alias}_std"),
                             ]
                         )
-                    agg_exprs.append(pl.col(msis_00_col).count().alias("count"))
+                    agg_exprs.append(
+                        pl.col(series_with_aliases[0][0].column).count().alias("count")
+                    )
                     binned = (
                         filtered.group_by("seasonal_bin")
                         .agg(agg_exprs)
@@ -230,76 +262,18 @@ def create_figure_19(
                 # Plot each bin at its 30.5-day midpoint on the day-of-year axis.
                 x_vals = (seasonal_bin + 0.5) * 30.5
 
-                msis_00 = binned["msis_00_mean"].to_numpy()
-                msis_00_std = binned["msis_00_std"].to_numpy()
-                msis_20 = binned["msis_20_mean"].to_numpy()
-                msis_20_std = binned["msis_20_std"].to_numpy()
-                if has_matlab:
-                    matlab_m = binned["matlab_mean"].to_numpy()
-                    matlab_std = binned["matlab_std"].to_numpy()
-
-                # Plot NRLMSISE-00 (red crosses) with errorbars
-                ax.errorbar(
-                    x_vals,
-                    msis_00,
-                    yerr=msis_00_std,
-                    marker=msis_00_marker,
-                    color=msis_00_color,
-                    linestyle="-",
-                    linewidth=1,
-                    markersize=6,
-                    label="NRLMSISE-00",
-                    capsize=3,
-                    elinewidth=1,
-                )
-
-                # Plot MSIS 2.0 (green triangles) with errorbars
-                ax.errorbar(
-                    x_vals,
-                    msis_20,
-                    yerr=msis_20_std,
-                    marker=msis_20_marker,
-                    color=msis_20_color,
-                    linestyle="-",
-                    linewidth=1,
-                    markersize=6,
-                    label="NRLMSIS 2.0",
-                    markerfacecolor="none",
-                    capsize=3,
-                    elinewidth=1,
-                )
-
-                # Plot MSIS 2.1 (blue circles) with errorbars if provided
-                if msis_21_col:
-                    msis_21 = binned["msis_21_mean"].to_numpy()
-                    msis_21_std = binned["msis_21_std"].to_numpy()
+                for series, alias in series_with_aliases:
                     ax.errorbar(
                         x_vals,
-                        msis_21,
-                        yerr=msis_21_std,
-                        marker=msis_21_marker,
-                        color=msis_21_color,
+                        binned[f"{alias}_mean"].to_numpy(),
+                        yerr=binned[f"{alias}_std"].to_numpy(),
+                        marker=series.marker,
+                        color=series.color,
                         linestyle="-",
                         linewidth=1,
                         markersize=6,
-                        label="NRLMSIS 2.1",
-                        markerfacecolor="none",
-                        capsize=3,
-                        elinewidth=1,
-                    )
-
-                if has_matlab:
-                    ax.errorbar(
-                        x_vals,
-                        matlab_m,
-                        yerr=matlab_std,
-                        marker=matlab_marker,
-                        color=matlab_color,
-                        linestyle="-",
-                        linewidth=1,
-                        markersize=6,
-                        label="MATLAB",
-                        markerfacecolor="none",
+                        label=series.display_name,
+                        markerfacecolor=series.markerfacecolor,
                         capsize=3,
                         elinewidth=1,
                     )
@@ -368,57 +342,24 @@ def create_figure_19(
     # Add legend to the GOCE high-F10.7 panel in the TuDelft layout; that panel
     # is empty and keeps the legend from covering Swarm-C data.
     legend_ax = axes[1, -1] if n_rows > 1 else axes[-1, -1]
-    legend_ax.errorbar(
-        [],
-        [],
-        yerr=[],
-        marker=msis_00_marker,
-        color=msis_00_color,
-        linestyle="-",
-        linewidth=1,
-        markersize=6,
-        label="NRLMSISE-00",
-        capsize=3,
-    )
-    legend_ax.errorbar(
-        [],
-        [],
-        yerr=[],
-        marker=msis_20_marker,
-        color=msis_20_color,
-        linestyle="-",
-        linewidth=1,
-        markersize=6,
-        markerfacecolor="none",
-        label="NRLMSIS 2.0",
-        capsize=3,
-    )
-    if msis_21_col:
-        legend_ax.errorbar(
-            [],
-            [],
-            yerr=[],
-            marker=msis_21_marker,
-            color=msis_21_color,
-            linestyle="-",
-            linewidth=1,
-            markersize=6,
-            markerfacecolor="none",
-            label="NRLMSIS 2.1",
-            capsize=3,
-        )
+    legend_model_series = model_series.copy()
     if matlab_col:
+        legend_model_series.append(
+            ModelSeries(matlab_col, "MATLAB (MSISE-00)", "#EDB120", "s", "none")
+        )
+    legend_model_series.extend(additional_model_series)
+    for series in legend_model_series:
         legend_ax.errorbar(
             [],
             [],
             yerr=[],
-            marker=matlab_marker,
-            color=matlab_color,
+            marker=series.marker,
+            color=series.color,
             linestyle="-",
             linewidth=1,
             markersize=6,
-            markerfacecolor="none",
-            label="MATLAB (MSISE-00)",
+            markerfacecolor=series.markerfacecolor,
+            label=series.display_name,
             capsize=3,
         )
     legend_ax.legend(loc="center", fontsize=10, frameon=True)

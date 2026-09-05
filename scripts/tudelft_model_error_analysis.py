@@ -450,6 +450,10 @@ def figure19(missions: list[tuple[MissionConfig, pl.DataFrame]]) -> None:
     #     y=1.015,
     # )
     add_density_reference_uncertainty_bands(fig, missions)
+    fig.savefig(
+        output_path("figure19", "tudelft_figure19_all_missions.pdf"),
+        bbox_inches="tight",
+    )
     save_figure(fig, "figure19", "tudelft_figure19_all_missions.pgf")
 
 
