@@ -453,7 +453,7 @@ def _single_panel_atlas(
     return pdf_path, preview
 
 
-def plot(model_path: Path, output: Path) -> dict[str, object]:
+def _plot(model_path: Path, output: Path) -> dict[str, object]:
     """Write all three A4 layout prototypes and return their manifest."""
     matrices, output_labels, input_labels, lag_order = _load(model_path)
     aggregated = tuple(aggregate(matrix, lag_order) for matrix in matrices)
@@ -505,6 +505,12 @@ def plot(model_path: Path, output: Path) -> dict[str, object]:
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
+
+
+def plot(model_path: Path, output: Path) -> dict[str, object]:
+    """Render without inheriting LaTeX text settings from other figure code."""
+    with plt.rc_context({"text.usetex": False}):
+        return _plot(model_path, output)
 
 
 def main() -> None:

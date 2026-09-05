@@ -90,7 +90,7 @@ def aggregate(
     )
 
 
-def plot(model_path: Path, output: Path) -> dict[str, object]:
+def _plot(model_path: Path, output: Path) -> dict[str, object]:
     with np.load(model_path, allow_pickle=False) as model:
         matrices = [model[name].astype(np.float64) for name in ("W1", "W2", "W3")]
         outputs = model["channel_names"].astype(str)
@@ -363,6 +363,12 @@ def plot(model_path: Path, output: Path) -> dict[str, object]:
     report_path = output / "polynomial_var_matrix_heatmaps.json"
     report_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     return report
+
+
+def plot(model_path: Path, output: Path) -> dict[str, object]:
+    """Render without inheriting LaTeX text settings from other figure code."""
+    with plt.rc_context({"text.usetex": False}):
+        return _plot(model_path, output)
 
 
 def main() -> None:
