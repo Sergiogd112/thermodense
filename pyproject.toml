@@ -45,6 +45,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "."]
+norecursedirs = [".worktrees", "data/products/source-snapshots"]
 
 [tool.uv.sources]
 tigramite = { git = "https://github.com/Sergiogd112/tigramite.git", rev = "7c7b177cfbff77e11d805ab04fc2647301da1951" }

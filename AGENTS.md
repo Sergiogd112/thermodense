@@ -11,3 +11,7 @@ Use the standard five-label triage vocabulary. See `docs/agents/triage-labels.md
 ### Domain docs
 
 This is a single-context repository using root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
+
+## User preferences
+
+When asked about progress, give context and an ETA, and offer to monitor it. If the user accepts, monitor the task until it finishes and propose next steps.
