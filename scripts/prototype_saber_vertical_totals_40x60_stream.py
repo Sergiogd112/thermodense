@@ -1,4 +1,4 @@
-"""THROWAWAY: exact, resumable 40x60-degree SABER vertical-total stream.
+"""THROWAWAY: exact, resumable configurable-cell SABER vertical-total stream.
 
 Run from the repository root (temporary storage remains bounded by --workers):
     uv run python scripts/prototype_saber_vertical_totals_40x60_stream.py --resume
@@ -39,15 +39,15 @@ from thermodense.saber import (
 CO2_DIR = Path("data/original/saber/co2_cooling_profiles")
 NO_DIR = Path("data/original/saber/no_cooling_profiles")
 L2A_DIR = Path("data/original/saber/level2a")
-SAMPLES = Path(
+DEFAULT_SAMPLES = Path(
     "outputs/figures/results/hasdm_msis_model_errors/data/"
     "hasdm_msis_errors_nearest_timestamp_grid_samples.parquet"
 )
-BASELINE = Path("data/decoded/saber/saber_hasdm_maunaloa_3hour.parquet")
+DEFAULT_BASELINE = Path("data/decoded/saber/saber_hasdm_maunaloa_3hour.parquet")
 DEFAULT_OUTPUT = Path("outputs/prototypes/saber_vertical_totals_40x60_stream")
 DEFAULT_TEMP = Path("/tmp/thermodense-saber-vertical-totals-40x60")
 START, END = date(2002, 1, 25), date(2025, 7, 20)
-LATITUDE_CENTER, CELL_WIDTHS = 20.0, (40.0, 60.0)
+LATITUDE_CENTER, DEFAULT_CELL_WIDTHS = 20.0, (40.0, 60.0)
 ALTITUDE_BOUNDS_KM, MIN_ALTITUDE_SPAN_KM = (100.0, 140.0), 38.0
 CHANNELS = ("CO2cool", "NOcool", "O2_1delta_ver", "OH_16_ver", "OH_20_ver")
 PROXIES = CHANNELS[2:]
@@ -136,6 +136,7 @@ def add_profiles(
     diagnostics: dict[str, int],
     accepted_spans: list[float],
     required: set[tuple[date, int]] | None,
+    cell_widths: tuple[float, float],
 ) -> None:
     """Apply the expanded-cell prototype's native-nearest-120-km cell rule."""
     scans = values.shape[0]
@@ -156,8 +157,8 @@ def add_profiles(
         & np.isfinite(lon120)
         & np.isfinite(time120)
         & (positions >= 0)
-        & (np.abs(lat120 - LATITUDE_CENTER) <= CELL_WIDTHS[0] / 2)
-        & (circular_delta(lon120, center) <= CELL_WIDTHS[1] / 2)
+        & (np.abs(lat120 - LATITUDE_CENTER) <= cell_widths[0] / 2)
+        & (circular_delta(lon120, center) <= cell_widths[1] / 2)
     )
     diagnostics["profiles_seen"] += scans
     diagnostics["profiles_rejected_missing_or_insufficient_levels"] += int(
@@ -187,6 +188,7 @@ def add_file(
     diagnostics: dict[str, dict[str, int]],
     spans: dict[str, list[float]],
     required: set[tuple[date, int]] | None,
+    cell_widths: tuple[float, float],
 ) -> None:
     """Decode one direct file or one Level2A file, once per proxy product set."""
     channels = tuple(channels)
@@ -232,6 +234,7 @@ def add_file(
             diagnostics[channel],
             spans[channel],
             required,
+            cell_widths,
         )
 
 
@@ -250,7 +253,7 @@ def empty_diagnostics() -> dict[str, dict[str, int]]:
 
 def atomic_npz(path: Path, **arrays: object) -> None:
     temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp.npz")
-    np.savez_compressed(temporary, **arrays)
+    np.savez_compressed(temporary, **arrays)  # pyright: ignore[reportArgumentType]
     temporary.replace(path)
 
 
@@ -286,7 +289,20 @@ def save_checkpoint(
     )
 
 
-def load_checkpoint(path: Path, metadata: dict[str, object], slots: int) -> tuple:
+CheckpointState = tuple[
+    dict[str, np.ndarray],
+    dict[str, np.ndarray],
+    dict[str, list[float]],
+    set[str],
+    set[tuple[date, int]],
+    dict[str, dict[str, str]],
+    dict[str, dict[str, int]],
+]
+
+
+def load_checkpoint(
+    path: Path, metadata: dict[str, object], slots: int
+) -> CheckpointState:
     if not path.exists():
         return (
             {channel: np.zeros(slots) for channel in CHANNELS},
@@ -535,6 +551,36 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--temp-dir", type=Path, default=DEFAULT_TEMP)
+    parser.add_argument(
+        "--samples-path",
+        type=Path,
+        default=DEFAULT_SAMPLES,
+        help="HASDM timestamp/longitude sample frame (default: thesis-result sample frame).",
+    )
+    calendar_source = parser.add_mutually_exclusive_group()
+    calendar_source.add_argument(
+        "--baseline-path",
+        type=Path,
+        default=DEFAULT_BASELINE,
+        help="3-hour SABER baseline whose timestamp column defines the calendar.",
+    )
+    calendar_source.add_argument(
+        "--calendar-npz",
+        type=Path,
+        help="NPZ whose one-dimensional time_ns array defines the 3-hour calendar.",
+    )
+    parser.add_argument(
+        "--latitude-width-deg",
+        type=float,
+        default=DEFAULT_CELL_WIDTHS[0],
+        help="Full latitude width of the moving SABER cell (default: 40).",
+    )
+    parser.add_argument(
+        "--longitude-width-deg",
+        type=float,
+        default=DEFAULT_CELL_WIDTHS[1],
+        help="Full longitude width of the moving SABER cell (default: 60).",
+    )
     available_cpus = os.cpu_count() or 1
     max_workers = available_cpus * 4
     default_workers = available_cpus * 2
@@ -581,6 +627,12 @@ def main() -> None:
         help="Do not request GATS listings or download; process only resolvable local files.",
     )
     args = parser.parse_args()
+    if not 0.0 < args.latitude_width_deg <= 180.0:
+        parser.error("--latitude-width-deg must be in (0, 180]")
+    if not 0.0 < args.longitude_width_deg <= 360.0:
+        parser.error("--longitude-width-deg must be in (0, 360]")
+    cell_widths = (args.latitude_width_deg, args.longitude_width_deg)
+    samples_path = args.samples_path
     if any(
         limit is not None and limit < 1
         for limit in (args.limit, args.daily_limit, args.checkpoint_every)
@@ -607,9 +659,22 @@ def main() -> None:
             ):
                 (args.output_dir / name).unlink(missing_ok=True)
         started = time.monotonic()
-        baseline = pd.read_parquet(BASELINE)
-        calendar = pd.DatetimeIndex(pd.to_datetime(baseline["timestamp"]))
-        centers_by_timestamp = hasdm_longitudes_by_timestamp(SAMPLES)
+        if args.calendar_npz is None:
+            baseline = pd.read_parquet(args.baseline_path)
+            calendar = pd.DatetimeIndex(pd.to_datetime(baseline["timestamp"]))
+            calendar_identity: dict[str, object] = {
+                "baseline_path": str(args.baseline_path)
+            }
+        else:
+            with np.load(args.calendar_npz, allow_pickle=False) as source:
+                if "time_ns" not in source.files:
+                    raise ValueError("--calendar-npz must contain a time_ns array")
+                time_ns = np.asarray(source["time_ns"])
+            if time_ns.ndim != 1:
+                raise ValueError("--calendar-npz time_ns must be one-dimensional")
+            calendar = pd.DatetimeIndex(time_ns.astype("datetime64[ns]"))
+            calendar_identity = {"calendar_npz": str(args.calendar_npz)}
+        centers_by_timestamp = hasdm_longitudes_by_timestamp(samples_path)
         centers = np.array(
             [
                 centers_by_timestamp.get(value.to_pydatetime(), np.nan)
@@ -619,7 +684,7 @@ def main() -> None:
         index_by_slot = {
             value.to_datetime64(): index for index, value in enumerate(calendar)
         }
-        metadata = {
+        metadata: dict[str, object] = {
             "schema": CHECKPOINT_SCHEMA,
             "calendar_sha256": hashlib.sha256(
                 calendar.to_numpy(dtype="datetime64[ns]").tobytes()
@@ -627,7 +692,9 @@ def main() -> None:
             # Use JSON-native containers so a saved checkpoint compares equal
             # after json.loads on every subsequent resume.
             "channels": list(CHANNELS),
-            "cell_widths_degrees": list(CELL_WIDTHS),
+            "cell_widths_degrees": list(cell_widths),
+            "samples_path": str(samples_path),
+            **calendar_identity,
             "altitude_bounds_km": list(ALTITUDE_BOUNDS_KM),
             "minimum_span_km": MIN_ALTITUDE_SPAN_KM,
             "daily_limit": args.daily_limit,
@@ -682,6 +749,7 @@ def main() -> None:
                 delta_diagnostics,
                 delta_spans,
                 delta_required,
+                cell_widths,
             )
             return (
                 delta_sums,
@@ -771,7 +839,8 @@ def main() -> None:
         )
         scope = "exact" if args.daily_limit is None else "validation subset; not exact"
         print(
-            f"40x60 required pairs={len(required)} ({scope}); selected={len(pairs)}",
+            f"{cell_widths[0]:g}x{cell_widths[1]:g} required pairs={len(required)} "
+            f"({scope}); selected={len(pairs)}",
             flush=True,
         )
         print_progress(len(pairs), completed, failures, average_bytes)
@@ -879,15 +948,21 @@ def main() -> None:
             process(filename, aliases, path, False)
             if number % 50 == 0 or number == len(local_pending):
                 print_progress(len(pairs), completed, failures, average_bytes)
-        remote_pending = iter(
-            (filename, *item)
-            for filename, item in pending.items()
-            if item[1] is not None
-        )
+        remote_items: list[tuple[str, Path, str, list[tuple[date, int]]]] = []
+        for filename, (path, url, aliases) in pending.items():
+            if url is not None:
+                remote_items.append((filename, path, url, aliases))
+        remote_pending = iter(remote_items)
 
         def download_and_decode(
             url: str, path: Path
-        ) -> tuple[str | None, str | None, object | None]:
+        ) -> tuple[str | None, str | None, tuple[
+            dict[str, np.ndarray],
+            dict[str, np.ndarray],
+            dict[str, dict[str, int]],
+            dict[str, list[float]],
+            set[tuple[date, int]] | None,
+        ] | None]:
             """Use each worker for network I/O and independent CPU decoding."""
             error = download(url, path)
             if error is not None:
@@ -938,6 +1013,8 @@ def main() -> None:
                     dirty += 1
                     checkpoint_if_due()
                 else:
+                    if decoded is None:
+                        raise RuntimeError("successful worker returned no decoded data")
                     commit_decoded(decoded, PROXIES)
                     completed.add(artifact_key(filename))
                     for pair in aliases:
@@ -983,12 +1060,12 @@ def main() -> None:
             },
         )
         report = {
-            "prototype": "THROWAWAY resumable 40x60 SABER Level2A vertical-total stream",
+            "prototype": "THROWAWAY resumable SABER Level2A vertical-total stream",
             "runtime_seconds": time.monotonic() - started,
-            "cell": {"center_latitude_deg": LATITUDE_CENTER, "widths_deg": CELL_WIDTHS},
+            "cell": {"center_latitude_deg": LATITUDE_CENTER, "widths_deg": cell_widths},
             "integration": "independent np.trapezoid native samples, 100--140 km inclusive, altitude metres, no interpolation/extrapolation, >=38 km observed span",
             "proxy_conversion": "O2_1delta_ver, OH_16_ver, OH_20_ver multiplied by 0.1 from ergs/cm3/sec to W/m3",
-            "required_pairs_exact_40x60": len(required),
+            "required_pairs_exact_cell": len(required),
             "daily_limit": args.daily_limit,
             "exact_full_cell": exact,
             "output_status": "exact_complete" if exact else "partial_not_for_pcmci",
