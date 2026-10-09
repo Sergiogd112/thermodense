@@ -34,7 +34,7 @@ facts, even if a newer implementation is introduced later.
 | `benchmarks/global_activity_input.py`, `global_activity_pcmci.py` | Completed isolated retrospective association experiment | Ten density altitudes + four drivers; raw F10.7 fit, centered-81 target-date bins, daily 180-lag analysis | CI trace is diagnostic, not a resume cache; saved raw matrices can support re-export |
 | `benchmarks/global_activity_polynomial.py` | Completed bounded predictive benchmark | Same daily input; degrees 1/2/3; train-only scaling, validation selection, fixed test | Trial/epoch checkpoints support compatible resume; checkpoint existence alone does not prove compatibility |
 | `benchmarks/global_activity_comparison.py` | Verified derived-result replay | Hash-bound models and input; paired same-support predictive comparison | Cheap deterministic replay; no fitting or remote job required |
-| `scripts/prototype_polynomial_var*.py` and direct-density/SABER prototypes | Exploratory/frozen experiment implementations | Preserve each named input/lag/scaling policy, including legacy spline-F10.7 differences | Varies by prototype; never infer resumability from a checkpoint directory name |
+| `scripts/prototypes/` (polynomial VAR, direct-density, Figure 5 and SABER prototypes) | Exploratory/frozen experiment implementations | Preserve each named input/lag/scaling policy, including legacy spline-F10.7 differences | Varies by prototype; never infer resumability from a checkpoint directory name |
 
 ## Cleanup order
 

@@ -3,7 +3,7 @@ import json
 import matplotlib
 import numpy as np
 
-from scripts.plot_polynomial_var_heatmaps import aggregate, mask_names, plot
+from scripts.prototypes.polynomial_var_heatmaps import aggregate, mask_names, plot
 
 matplotlib.use("Agg")
 

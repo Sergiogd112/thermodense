@@ -4,8 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import scripts.prototype_empirical_model_figure5_3hour as figure5
-from scripts.prototype_empirical_model_figure5_3hour import (
+import scripts.prototypes.empirical_model_figure5_3hour as figure5
+from scripts.prototypes.empirical_model_figure5_3hour import (
     ALTITUDES,
     PHYSICAL_LAG_DAYS,
     cases,

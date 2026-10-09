@@ -1,6 +1,6 @@
 """THROWAWAY PROTOTYPE: Figure 5 empirical-model comparison in three layouts.
 
-Run with `.venv/bin/python -m scripts.prototype_empirical_model_figure5`.
+Run with `.venv/bin/python -m scripts.prototypes.empirical_model_figure5`.
 """
 
 from __future__ import annotations

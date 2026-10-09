@@ -1,7 +1,7 @@
 """THROWAWAY: test vertically integrated SABER products in the current HASDM cell.
 
 Run once from the repository root with:
-    uv run python scripts/prototype_saber_vertical_totals.py
+    uv run python scripts/prototypes/saber_vertical_totals.py
 
 This deliberately does not change the production decoder, data, bundle, or PCMCI.
 """

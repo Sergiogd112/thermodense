@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-import scripts.prototype_polynomial_var as runner
+import scripts.prototypes.polynomial_var as runner
 
 
 def test_lag_ordering_and_no_lookahead():

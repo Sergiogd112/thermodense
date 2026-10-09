@@ -15,7 +15,7 @@ from matplotlib.backends.backend_pdf import PdfPages  # noqa: E402
 from matplotlib.colors import LogNorm, Normalize, SymLogNorm  # noqa: E402
 
 if __package__:
-    from scripts.plot_polynomial_var_heatmaps import (
+    from scripts.prototypes.polynomial_var_heatmaps import (
         DEFAULT_MODEL,
         aggregate,
         display_name,
@@ -23,7 +23,7 @@ if __package__:
         sha256,
     )
 else:
-    from plot_polynomial_var_heatmaps import (
+    from polynomial_var_heatmaps import (
         DEFAULT_MODEL,
         aggregate,
         display_name,

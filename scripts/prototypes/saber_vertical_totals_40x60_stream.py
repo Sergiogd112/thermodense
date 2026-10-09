@@ -1,7 +1,7 @@
 """THROWAWAY: exact, resumable configurable-cell SABER vertical-total stream.
 
 Run from the repository root (temporary storage remains bounded by --workers):
-    uv run python scripts/prototype_saber_vertical_totals_40x60_stream.py --resume
+    uv run python scripts/prototypes/saber_vertical_totals_40x60_stream.py --resume
 
 This is scratch feasibility work for the isolated PCMCI pilot.  It does not
 change production SABER inputs or decoder outputs.

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import scripts.prototype_density_pcmci_3hour_and_daily as runner
+import scripts.prototypes.density_pcmci_3hour_and_daily as runner
 
 
 def test_case_expansion_and_physical_lag_conversion():
