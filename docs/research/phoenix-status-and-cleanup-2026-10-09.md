@@ -43,3 +43,22 @@ Paths are relative to the account's `karman-phoenix/` directory.
 
 `karman-phoenix/` occupies 216 GB on a shared `/home` that is 81% full; pruning
 intermediate data needs a separate decision.
+
+## Migration to Phoenix as the primary machine
+
+Later the same day the working environment moved to Phoenix (`~/thermodense`,
+paper worktree `~/thermodense-paper`). Large public inputs are re-downloaded
+from providers on Phoenix instead of uploaded from the laptop:
+
+- Copied: `data/products`, `data/derived`, `data/external`,
+  `data/analyzed_downsampled`, `outputs/`, `papers/`, `presentation/`,
+  `thesis/`, small raw inputs and access-conditional HASDM archives.
+- Re-downloaded: TU Delft v02 and SABER CO₂ cooling profiles.
+- Not yet on Phoenix: derived `decoded/`, `analyzed/`, `msis/`, `mmsis/`
+  (~80 GB), SABER Level2A and NO cooling (~116 GB, parked prototypes only).
+  Regenerating derived products is a new run with new hashes, not a reproduction.
+
+The shared `/home` is the constraint (~150 GB free). Bulk data should move to a
+per-user `/qnap` directory once an administrator creates one.
+On Phoenix's ext4, same-size rewrites within one timestamp tick keep the same
+mtime; one test relied on finer timestamps and was made portable.
