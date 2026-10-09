@@ -175,8 +175,11 @@ def test_directory_fingerprint_uses_deterministic_tree_metadata(tmp_path: Path) 
     nested.write_bytes(b"content")
     first = checkpoints.fingerprint(artifact)
     assert checkpoints.fingerprint(artifact, first)["sha256"] == first["sha256"]
-    nested.write_bytes(b"changed")
+    # Change the size too: coarse-mtime filesystems (e.g. ext4 on Phoenix) can
+    # give a same-size rewrite an identical timestamp.
+    nested.write_bytes(b"changed content")
     changed = checkpoints.fingerprint(artifact, first)
+    assert changed["sha256"] != first["sha256"]
     assert changed["tree_id"] != first["tree_id"]
 
 
