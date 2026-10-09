@@ -1,4 +1,6 @@
+import gzip
 import io
+import json
 import logging
 import os
 import re
@@ -482,6 +484,108 @@ def decode_tudelft_single(
 
 def decode_tudelft_single_worker(args):
     return decode_tudelft_single(*args)
+
+
+# VirES marks unavailable densities (e.g. orbit means near data gaps) with this
+# sentinel although its HAPI metadata declares no fill value.
+VIRES_DENSITY_SENTINEL = 9.99e32
+# VirES parameter -> TU Delft decoded column. Columns VirES lacks become null.
+VIRES_TO_TUDELFT = {
+    "Height_GD": "Altitude (m)",
+    "Longitude_GD": "Longitude (deg)",
+    "Latitude_GD": "Latitude (deg)",
+    "local_solar_time": "Local Solar Time (hours)",
+    "density": "Density (kg/m^3)",
+    "density_orbitmean": "Density Mean (kg/m^3)",
+    "validity_flag": "Anomalus Density (kg/m^3)",
+    "validity_flag_orbitmean": "Anomalus Density Mean (kg/m^3)",
+}
+
+
+def read_hapi_csv(sourcepath: str) -> tuple[dict, pl.DataFrame]:
+    """Read a HAPI CSV saved with ``include=header``; fill values become null."""
+    header_lines: list[bytes] = []
+    data_lines: list[bytes] = []
+    raw = Path(sourcepath).read_bytes()
+    if sourcepath.endswith(".gz"):
+        raw = gzip.decompress(raw)
+    for line in raw.splitlines(keepends=True):
+        (header_lines if line.startswith(b"#") else data_lines).append(line)
+    header = json.loads(b"".join(line[1:] for line in header_lines))
+    parameters = header["parameters"]
+    names = [parameter["name"] for parameter in parameters]
+    if not b"".join(data_lines).strip():
+        return header, pl.DataFrame(schema={name: pl.Utf8 for name in names})
+    df = pl.read_csv(
+        io.BytesIO(b"".join(data_lines)),
+        has_header=False,
+        new_columns=names,
+        infer_schema_length=0,
+    )
+    if df.width != len(names):
+        raise ValueError(f"{sourcepath}: {df.width} columns for {len(names)} parameters")
+    for parameter in parameters:
+        name, fill = parameter["name"], parameter.get("fill")
+        if parameter.get("type") == "isotime":
+            continue
+        value = pl.col(name).cast(pl.Float64)
+        if fill is not None:
+            value = pl.when(value == float(fill)).then(None).otherwise(value)
+        if name in ("density", "density_orbitmean"):
+            value = pl.when(value >= VIRES_DENSITY_SENTINEL).then(None).otherwise(value)
+        df = df.with_columns(value.alias(name))
+    return header, df
+
+
+def decode_vires_single(
+    mission: str,
+    sourcepath: str,
+    outfilepath: str,
+    manifest_path: str,
+) -> Tuple[str, str, str, str] | None:
+    """Decode one VirES month into the TU Delft decoded schema.
+
+    VirES timestamps are UTC (``Time System`` = ``UTC``) and it does not carry
+    the argument of latitude, so that column is null.
+    """
+    schema = TUDELFT_SCHEMAS[mission.upper()]
+    parquet_path = str(Path(outfilepath).with_suffix(".parquet"))
+    mission_code = str(Path(sourcepath).name).split("_")[0].upper()
+    try:
+        header, df = read_hapi_csv(sourcepath)
+        if df.is_empty():
+            logging.warning("VirES file %s contains no data rows.", sourcepath)
+            return None
+        timestamp = pl.col("Timestamp").str.strptime(
+            pl.Datetime("ms"), "%Y-%m-%dT%H:%M:%S%.fZ"
+        )
+        columns = [
+            timestamp.dt.date().alias("Date yyyy-mm-dd"),
+            timestamp.dt.time().alias("Time hh:mm:ss.sss"),
+            pl.lit("UTC").alias("Time System"),
+            pl.lit(None).alias("Argument of Latitude (deg)"),
+        ]
+        for source, target in VIRES_TO_TUDELFT.items():
+            columns.append(
+                (pl.col(source) if source in df.columns else pl.lit(None)).alias(target)
+            )
+        decoded = df.select(columns).select(
+            [pl.col(name).cast(dtype) for name, dtype in schema.items()]
+        )
+        os.makedirs(os.path.dirname(parquet_path), exist_ok=True)
+        decoded.write_parquet(parquet_path, compression="lz4")
+        _append_decode_manifest_entry(
+            manifest_path,
+            mission=mission,
+            mission_code=mission_code,
+            parquet_path=parquet_path,
+            sourcepath=sourcepath,
+        )
+        logging.info("Decoded %s from %s", header.get("x_dataset"), sourcepath)
+        return (mission, mission_code, parquet_path, sourcepath)
+    except Exception as e:
+        logging.error("Error processing %s: %s", sourcepath, e)
+        return None
 
 
 def _hasdm_mission_code(sourcepath: str, txt_name: str | None = None) -> str:

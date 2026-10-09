@@ -7,6 +7,7 @@ datasets, credentials, cookies, or publisher PDFs from this repository.
 | Source | Access and attribution summary |
 | --- | --- |
 | [TU Delft thermosphere density](https://thermosphere.tudelft.nl/data/data/version_02/) | Attribute TU Delft and review its stated [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) terms. |
+| [ESA VirES (HAPI)](https://vires.services/hapi) | Anonymous mirror of the TU Delft (TOLEOS) CHAMP, GRACE, GRACE-FO and Swarm densities (`download_vires`, `decode_vires_single`); no GOCE. Values sit on a UTC grid, so they are interpolated relative to the GPS-timed TU Delft files: CHAMP January 2003 matched with a 4×10⁻⁴ median relative density difference and 10⁻⁸ for the orbit mean. Use as an alternative source, not a byte-identical reproduction. Subject to the [VirES data terms](https://vires.services/data_terms). |
 | [NOAA GML CO₂](https://gml.noaa.gov/ccgg/trends/data.html) | NOAA makes the records available and requests citation of the source; verify the applicable dataset terms before redistribution. |
 | [CelesTrak space weather](https://celestrak.org/SpaceData/SW-All.txt) | Download from CelesTrak and attribute it. Its [format](https://celestrak.org/SpaceData/SpaceWx-format.php) is prepared locally as `data/original/space_weather/SW-All.csv`. |
 | [HASDM](https://spacewx.com/hasdm/) | Research access is required; redistribution is not assumed. |
