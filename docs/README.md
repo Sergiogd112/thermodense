@@ -31,6 +31,7 @@ earlier advice.
 ### WACCM-X
 
 - [Regional inventory](research/waccm-x-regional-inventory-2026-10-05.md)
+- [Regional archive download, 10 Oct](research/waccm-x-regional-download-2026-10-10.md) — 27,026 verified daily members (1950–2024, no 2022) stored byte-exact.
 
 ## Architecture and workflows
 
