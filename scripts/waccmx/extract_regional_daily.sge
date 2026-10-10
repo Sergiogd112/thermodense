@@ -1,0 +1,7 @@
+#!/bin/bash
+# SGE array 1..74: one stored WACCM-X regional year per task (see extract_regional_daily.py).
+#$ -S /bin/bash
+set -euo pipefail
+cd /home/sergio/thermodense
+exec /home/sergio/.local/share/thermodense/venvs/waccmx/bin/python -I scripts/waccmx/extract_regional_daily.py --index "$SGE_TASK_ID" \
+  --source data/original/waccm_x_regional --out data/derived/waccmx_regional_daily_v1

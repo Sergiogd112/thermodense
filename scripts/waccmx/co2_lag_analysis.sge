@@ -1,0 +1,6 @@
+#!/bin/bash
+#$ -S /bin/bash
+set -euo pipefail
+cd /home/sergio/thermodense
+export OMP_NUM_THREADS=2 MPLBACKEND=Agg
+exec /home/sergio/.local/share/thermodense/venvs/waccmx/bin/python -I scripts/waccmx/co2_lag_analysis.py
