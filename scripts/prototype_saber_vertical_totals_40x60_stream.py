@@ -300,6 +300,46 @@ CheckpointState = tuple[
 ]
 
 
+# Checkpoints written before the input paths were recorded carry no path keys.
+# They are compatible exactly when the current run uses the same default paths.
+LEGACY_PATH_DEFAULTS = {
+    "samples_path": str(DEFAULT_SAMPLES),
+    "baseline_path": str(DEFAULT_BASELINE),
+}
+THREE_HOURS_NS = 3 * 3600 * 10**9
+
+
+def validate_calendar_ns(time_ns: np.ndarray) -> np.ndarray:
+    """Reject custom calendars that would silently drop or overwrite scans."""
+
+    time_ns = np.asarray(time_ns)
+    if time_ns.ndim != 1:
+        raise ValueError("--calendar-npz time_ns must be one-dimensional")
+    if time_ns.size == 0:
+        raise ValueError("--calendar-npz time_ns is empty")
+    values = time_ns.astype("datetime64[ns]")
+    if np.isnat(values).any():
+        raise ValueError("--calendar-npz time_ns contains missing timestamps")
+    integers = values.astype(np.int64)
+    if np.any(integers % THREE_HOURS_NS):
+        raise ValueError("--calendar-npz time_ns must lie on the three-hour UTC grid")
+    if np.unique(integers).size != integers.size:
+        raise ValueError("--calendar-npz time_ns contains duplicate timestamps")
+    return values
+
+
+def with_legacy_path_defaults(
+    saved: dict[str, object], current: dict[str, object]
+) -> dict[str, object]:
+    """Fill path keys absent from an old checkpoint when the current run uses the defaults."""
+
+    upgraded = dict(saved)
+    for key, default in LEGACY_PATH_DEFAULTS.items():
+        if key not in upgraded and current.get(key) == default:
+            upgraded[key] = default
+    return upgraded
+
+
 def load_checkpoint(
     path: Path, metadata: dict[str, object], slots: int
 ) -> CheckpointState:
@@ -320,7 +360,7 @@ def load_checkpoint(
             raise RuntimeError(
                 "Checkpoint schema is incompatible; use --reset."
             ) from error
-        if checkpoint_metadata != metadata:
+        if with_legacy_path_defaults(checkpoint_metadata, metadata) != metadata:
             raise RuntimeError("Checkpoint metadata/config differs; use --reset.")
         sums = {channel: saved[f"sum_{channel}"] for channel in CHANNELS}
         counts = {channel: saved[f"count_{channel}"] for channel in CHANNELS}
@@ -670,9 +710,7 @@ def main() -> None:
                 if "time_ns" not in source.files:
                     raise ValueError("--calendar-npz must contain a time_ns array")
                 time_ns = np.asarray(source["time_ns"])
-            if time_ns.ndim != 1:
-                raise ValueError("--calendar-npz time_ns must be one-dimensional")
-            calendar = pd.DatetimeIndex(time_ns.astype("datetime64[ns]"))
+            calendar = pd.DatetimeIndex(validate_calendar_ns(time_ns))
             calendar_identity = {"calendar_npz": str(args.calendar_npz)}
         centers_by_timestamp = hasdm_longitudes_by_timestamp(samples_path)
         centers = np.array(
