@@ -91,8 +91,9 @@ Receipts: [download](waccm-x-regional-download-2026-10-10.md),
 - **Transport times** (tracer age): about 1.1 years to 20 km, about 3.0 years to
   40–60 km and about 4.1–4.2 years to 70 km; runs 2 and 3 agree.
   - Above about 75 km, CO₂ is depleted, so its age cannot be read. No transit
-    time to the thermosphere is measured; the ~4-year age at 70 km is only a
-    lower bound on reaching that height.
+    time to the thermosphere is measured. The ~4-year age at 70 km is a
+    CO₂-equivalent, mean-like delay; it bounds neither first arrival nor the
+    thermospheric response time.
   - A lagged tigramite (ParCorr/PCMCI+) analysis cannot time it. No lag
     survives a surrogate test, and an apparent ~5.7-year thermospheric lag is
     solar aliasing.
