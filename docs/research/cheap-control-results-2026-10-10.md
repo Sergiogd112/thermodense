@@ -8,7 +8,15 @@ approved and run on 10 Oct. SGE jobs 1574 (prep), 1575 (32-task fit array) and
 `scripts/cheap_controls_full25.py` (SHA-256 `fd07f4b7…16e1dcc37`; last
 modified before the prep job started), with synthetic tests in
 `tests/test_cheap_controls_full25.py`. Its two input paths are the Phoenix
-locations used in the run; environment: `uv` project venv, scikit-learn 1.8.0. The test months had already been scored by the neural
+locations used in the run; environment: `uv` project venv, scikit-learn 1.8.0.
+Known limitation of that code, kept unchanged so the hash matches: `report`
+checks the current `prep.json` for the smoke flag but does not require every
+fit's `prep_sha256` to equal the current `prep.json` hash, so stale smoke fits
+in a reused directory could pass. The actual run is unaffected: it used a
+fresh output root (the smoke test ran under `/tmp`), `prep.json` has
+`smoke_stride` 0, and all 32 fits record the same `prep_sha256` as that file
+(`f2a7677b…`; checked 2026-10-11 after review). A reuse should add that check
+first. The test months had already been scored by the neural
 campaign, so this study is **exploratory**.
 
 ## Setup as run
