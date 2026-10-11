@@ -75,10 +75,11 @@ Figure: `data/derived/waccmx_co2_tigramite_v1/lag_correlation.png` (local only).
   - about 4.1–4.2 years to 70 km.
 - Above about 75 km, photolysis and diffusive separation deplete CO₂, so its
   age cannot be read from CO₂ alone. **No transit time to the thermosphere is
-  measured here.** The 70 km tracer age (about 4 years) is a lower bound on how
-  long a surface change takes to get that far. Turning it into a
-  thermospheric response time would need an explicit transport calculation or
-  an inert tracer. (A "4–5 years" estimate given earlier was removed on
+  measured here.** The 70 km value (about 4 years) is a CO₂-equivalent tracer
+  age: a mean-like transport delay. It does not bound first arrival, because
+  with a broad spread of transit times part of a surface change can arrive
+  much sooner. It is also not a thermospheric response time, which would need
+  an explicit transport calculation or an inert tracer. (A "4–5 years" estimate given earlier was removed on
   2026-10-11 after review as unsupported.)
 - The long-term increase arrives attenuated: about 55–75% of the surface growth
   rate at 100–140 km after a solar adjustment.
