@@ -25,6 +25,9 @@ import numpy as np
 PROFILE_VARS = ["CO2", "T", "DEN", "Z3", "O", "O2", "N2_vmr", "He", "NO"]
 HEIGHT_VARS = ["CO2", "T", "DEN", "O", "O2", "N2_vmr", "He"]
 HEIGHTS_KM = [20, 40, 60, 70, 80, 90, 100, 110, 120, 140, 160, 200, 250, 300, 350, 400, 450, 500]
+# v2: the full vertical column, from near the ground to above the highest model top (~680 km).
+HEIGHTS_KM_V2 = ([1, 5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 130, 140, 160, 180, 200]
+                 + list(range(225, 701, 25)))
 DRIVERS = ["co2vmr", "ch4vmr", "n2ovmr", "f107", "f107a", "f107p", "kp", "ap", "sol_tsi"]
 CENTRE = (2, 2)  # 19.894737°N, 205°E in the 5 x 5 subset
 VERSION = "waccmx-regional-daily-v1"
@@ -115,7 +118,12 @@ def main():
     p.add_argument("--source", type=Path, default=Path("data/original/waccm_x_regional"))
     p.add_argument("--out", type=Path, default=Path("data/derived/waccmx_regional_daily_v1"))
     p.add_argument("--index", type=int, required=True, help="1-based index into sorted year directories")
+    p.add_argument("--heights", choices=("v1", "v2"), default="v1",
+                   help="v1: 20-500 km (lag analysis); v2: full column 1-700 km")
     a = p.parse_args()
+    global HEIGHTS_KM, VERSION
+    if a.heights == "v2":
+        HEIGHTS_KM, VERSION = HEIGHTS_KM_V2, "waccmx-regional-daily-v2"
     years = sorted(d for d in a.source.glob("WACCM-X_*_16-25_200-210") if (d / "COMPLETE.json").exists())
     print(extract(years[a.index - 1], a.out))
 
