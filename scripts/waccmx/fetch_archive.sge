@@ -1,0 +1,10 @@
+#!/bin/bash
+# SGE array 1..N: one UKSSDC regional WACCM-X yearly archive per task (see fetch_archive.py).
+# Submit from the repository root with WACCMX_FTP_BASE set, e.g.
+#   qsub -t 1-74 -tc 4 -pe smp 2 -v WACCMX_FTP_BASE scripts/waccmx/fetch_archive.sge
+#$ -S /bin/bash
+set -euo pipefail
+cd "${THERMODENSE_ROOT:-$SGE_O_WORKDIR}"
+D=data/original/waccm_x_regional
+exec "${THERMODENSE_PYTHON:-.venv/bin/python}" -I scripts/waccmx/fetch_archive.py --tasks "$D/.tools/tasks.txt" \
+  --index "$SGE_TASK_ID" --dest "$D" --threads 2
