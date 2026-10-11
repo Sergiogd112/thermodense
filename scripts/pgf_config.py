@@ -33,7 +33,8 @@ def configure_pgf() -> None:
             "pgf.rcfonts": False,
             "pgf.preamble": (
                 r"\usepackage{amssymb}"
-                r"\usepackage{siunitx}"
+                # Optional: Phoenix's TeX Live lacks siunitx and no figure uses its macros.
+                r"\IfFileExists{siunitx.sty}{\usepackage{siunitx}}{}"
                 r"\providecommand{\mathdefault}{\mathrm}"
                 r"\usepackage[strings]{underscore}"
             ),

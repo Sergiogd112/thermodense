@@ -233,3 +233,58 @@ def test_compositor_requires_and_records_paired_jb(
         "JB inputs are externally generated provider-model outputs"
         in provenance["disclosure"]
     )
+
+
+def drawn_color(line) -> str:
+    """Errorbar caps are marker-only lines drawn with their edge color."""
+    return line.get_markeredgecolor() if line.get_linestyle() in ("None", "") else line.get_color()
+
+
+def test_muted_brown_draws_everything_gray_with_one_legend_entry():
+    data = figure6.load_brown_literature(brown_csv_path())
+    fig, ax = plt.subplots()
+
+    handles = figure6.plot_brown_literature(ax, data, muted=True)
+
+    assert len(handles) == 1
+    assert "Brown et al. (2024)" in handles[0].get_label()
+    assert {drawn_color(line) for line in ax.lines} == {figure6.BROWN_MUTED_COLOR}
+    assert ax.get_xlim() != figure6.BROWN_X_LIMITS  # axis styling is left to the caller
+    plt.close(fig)
+
+
+def test_overlay_puts_brown_behind_current_trends_on_one_axis(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    fig = plt.figure(figsize=(10, 7.5), layout="constrained")
+    ax = figure6.compose_overlay(
+        fig, figure6.load_brown_literature(brown_csv_path()), paired_jb_trend_data()
+    )
+
+    assert len(fig.axes) == 1
+    assert ax.get_ylim() == (0.0, 850.0)
+    gray = [line for line in ax.lines if drawn_color(line) == figure6.BROWN_MUTED_COLOR]
+    colored = [
+        line
+        for line in ax.lines
+        if drawn_color(line) not in (figure6.BROWN_MUTED_COLOR, "black")  # zero line is reference
+        and line.get_linestyle() not in ("None", "")
+    ]
+    assert gray and colored
+    assert max(line.get_zorder() for line in gray) < min(line.get_zorder() for line in colored)
+    plt.close(fig)
+
+    trend_csv = tmp_path / "trends.csv"
+    paired_jb_trend_data().write_csv(trend_csv)
+    monkeypatch.setattr(
+        "matplotlib.figure.Figure.savefig",
+        lambda _fig, path, **_kwargs: Path(path).touch(),
+    )
+    provenance = figure6.compose_figure(
+        brown_csv_path(), trend_csv, tmp_path, ["test"], require_jb=True, layout="overlay"
+    )
+    assert provenance["layout"] == "overlay"
+    assert (tmp_path / "density_trend_figure6_overlay_provenance.json").is_file()
+    assert "Light gray" in (tmp_path / "density_trend_figure6_overlay_caption.txt").read_text()
+    with pytest.raises(ValueError):
+        figure6.compose_figure(brown_csv_path(), trend_csv, tmp_path, layout="stacked")
