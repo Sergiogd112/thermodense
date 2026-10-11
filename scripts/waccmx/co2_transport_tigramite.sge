@@ -1,0 +1,6 @@
+#!/bin/bash
+#$ -S /bin/bash
+set -euo pipefail
+cd /home/sergio/thermodense
+export OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+exec /home/sergio/thermodense/.venv/bin/python -I scripts/waccmx/co2_transport_tigramite.py
