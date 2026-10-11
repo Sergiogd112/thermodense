@@ -16,6 +16,15 @@ campaign, so this study is **exploratory**.
 
   Target: JB08 log residual. MAPE is computed on `JB08·exp(r̂)`.
 - Ridge: deterministic. Boosting: seeds 0–2, stopping after 295–844 iterations.
+- Calendar basis in C and D, recorded here as run (the approved design
+  doc is not edited after the fact):
+  - continuous time `t` is decimal years since 2004-01-01 (365.25-day years);
+  - natural cubic spline, Hastie et al. ESL eq. 5.4–5.5 truncated-power form;
+  - 12 knots at t = 0, 2, …, 22 (2004-01-01 through 2026-01-01, both
+    boundaries included);
+  - basis without intercept: 11 columns, the first being `t` itself, so
+    "11 df" excludes the constant. Ridge fits its own intercept; boosting
+    needs none.
 - Placebo P: each scaled CO₂ column fitted on training rows to
   `[1, t, t², sin 2πt, cos 2πt]` in decimal years. P2: plain decimal time.
 - A strided smoke test of the full pipeline ran first, and its cache is barred

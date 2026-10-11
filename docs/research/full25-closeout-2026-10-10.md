@@ -118,10 +118,13 @@ an ensemble.
   **bit-identical** (mean, SD and histogram counts). The amendment changed
   provenance hashes only. The new root adds the four missing
   `bounded_omni_depth_01` no-CO₂ seeds (01–04), so all three cohorts are complete.
-- Neural models are nearly unbiased in mean (ratio ≈ 1.02), while JB08
-  overestimates density by about 7% and NRLMSISE-00 by about 22% on this
-  support. The ±CO₂ distributions differ by ≤0.012 in mean and ≤0.016 in SD,
-  which does not change the MAPE reading above.
+- Mean observed/model ratios are about 1.02 for the neural models, 0.927 for
+  JB08 and 0.776 for NRLMSISE-00 on this support. So observations average
+  about 7% (JB08) and 22% (NRLMSISE-00) below the models' densities, measured
+  relative to model density; the reciprocal is not the same quantity. The
+  ±CO₂ distributions differ by ≤0.012 in mean and ≤0.016 in SD, which does not
+  change the MAPE reading above. (Wording corrected 2026-10-11 after review;
+  the numbers are unchanged.)
 - Outputs: `full25-sidecars-20261010/ratio-analysis/outputs/report.json`.
 
 ## Remaining
