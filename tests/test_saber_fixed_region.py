@@ -509,3 +509,13 @@ def test_same_orbit_within_its_pass_is_accepted(tmp_path: Path) -> None:
     ])
     scans, _ = run(raw, date(2024, 1, 1), date(2024, 1, 1))
     assert scans.height == 2
+
+
+def test_nonregional_identity_reused_across_midnight_fails(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    make_file(raw, date(2024, 1, 1), scans=[{"orbit": 5, "event": 1, "lat": -60, "lon": 10, "time": 82_800_000}])
+    make_file(raw, date(2024, 1, 2), scans=[{"orbit": 5, "event": 1, "time": 3_600_000}])
+    with pytest.raises(ValueError, match="timestamp"):
+        run(raw, date(2024, 1, 1), date(2024, 1, 2))
+    assert not (tmp_path / "new").exists()
