@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import scripts.prototype_saber_vertical_totals_40x60_stream as stream
+import scripts.prototypes.saber_vertical_totals_40x60_stream as stream
 
 
 def test_legacy_checkpoint_without_path_keys_matches_default_paths():
