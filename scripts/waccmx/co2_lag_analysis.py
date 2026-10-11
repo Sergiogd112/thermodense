@@ -244,7 +244,7 @@ def plot(result, runs, path):
         ax.errorbar(m, np.array(hs) + (k - 1) * 0.8, xerr=[lo, hi], color=colors[k], marker=markers[k],
                     markersize=5, linewidth=2, capsize=0, markeredgecolor="#fcfcfb", markeredgewidth=1,
                     label="%s, %d-%d" % (label.split(" ")[0], int(entry["windows"]["8"]["from"]),
-                                         int(entry["windows"]["8"]["to"])))
+                                         int(entry["windows"]["8"]["age"]["40"]["last_month_used"])))
     ax.set_title("Equilibrated tracer age (window from year 8)", fontsize=9.5, color=ink, loc="left")
     ax.set_xlabel("tracer age (years)")
     ax.set_ylabel("geopotential height (km)")
