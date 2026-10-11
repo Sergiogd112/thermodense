@@ -109,6 +109,8 @@ DATASET_LINESTYLES = {
     "NRLMSIS 2.1 Mauna Loa baseline": (0, (3, 1, 1, 1, 1, 1)),
     "JB2006 Mauna Loa baseline": ":",
     "JB2008 Mauna Loa baseline": (0, (5, 2, 1, 2)),
+    "WACCM-X run 3 (2006-2024)": "-",
+    "WACCM-X run 2 (1982-1997)": "--",
 }
 DATASET_LABELS = {
     "Global mean thermospheric density": "Gbl. Mean",
@@ -119,6 +121,8 @@ DATASET_LABELS = {
     "NRLMSIS 2.1 Mauna Loa baseline": "NRLMSIS 2.1",
     "JB2006 Mauna Loa baseline": "JB2006",
     "JB2008 Mauna Loa baseline": "JB2008",
+    "WACCM-X run 3 (2006-2024)": "WACCM-X 2006–24",
+    "WACCM-X run 2 (1982-1997)": "WACCM-X 1982–97",
 }
 
 DATASET_COLORS = {
@@ -130,6 +134,8 @@ DATASET_COLORS = {
     "NRLMSIS 2.1 Mauna Loa baseline": "#d62728",
     "JB2006 Mauna Loa baseline": "#17becf",
     "JB2008 Mauna Loa baseline": "#bcbd22",
+    "WACCM-X run 3 (2006-2024)": "#e377c2",
+    "WACCM-X run 2 (1982-1997)": "#e377c2",
 }
 
 DURATION_MARKERS = {

@@ -288,3 +288,39 @@ def test_overlay_puts_brown_behind_current_trends_on_one_axis(
     assert "Light gray" in (tmp_path / "density_trend_figure6_overlay_caption.txt").read_text()
     with pytest.raises(ValueError):
         figure6.compose_figure(brown_csv_path(), trend_csv, tmp_path, layout="stacked")
+
+
+def test_extra_trend_csv_adds_waccmx_with_caption_and_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    trend_csv = tmp_path / "trends.csv"
+    paired_jb_trend_data().write_csv(trend_csv)
+    extra = tmp_path / "waccmx.csv"
+    pl.DataFrame(
+        {
+            "dataset": list(figure6.WACCMX_DATASETS),
+            "altitude_km": [398.5, 398.5],
+            "trend_percent_per_decade": [-5.9, -6.6],
+            "trend_percent_per_decade_hac_95_ci_lower": [-9.3, -10.8],
+            "trend_percent_per_decade_hac_95_ci_upper": [-2.5, -2.2],
+            "duration_bin_years": [11, 11],
+            "day_coverage": [1.0, 1.0],
+        }
+    ).write_csv(extra)
+    monkeypatch.setattr(
+        "matplotlib.figure.Figure.savefig",
+        lambda _fig, path, **_kwargs: Path(path).touch(),
+    )
+
+    provenance = figure6.compose_figure(
+        brown_csv_path(), trend_csv, tmp_path, ["test"], require_jb=True,
+        layout="overlay", extra_trend_csvs=(extra,),
+    )
+
+    assert provenance["waccmx_included"] is True
+    assert provenance["extra_trend_csvs"][0]["sha256"] == figure6.sha256_file(extra)
+    caption = (tmp_path / "density_trend_figure6_overlay_caption.txt").read_text()
+    assert "WACCM-X" in caption and "not an observation" in caption
+    with pytest.raises(FileNotFoundError):
+        figure6.compose_figure(brown_csv_path(), trend_csv, tmp_path,
+                               extra_trend_csvs=(tmp_path / "missing.csv",))

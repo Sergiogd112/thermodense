@@ -46,6 +46,14 @@ DEFAULT_OUTPUT_DIR = Path("outputs/figures/results/density_trend_figure6")
 BROWN_X_LIMITS = (-7.0, 1.0)
 SHARED_ALTITUDE_LIMITS = (0.0, 850.0)
 JB_DATASETS = ("JB2006 Mauna Loa baseline", "JB2008 Mauna Loa baseline")
+WACCMX_DATASETS = ("WACCM-X run 3 (2006-2024)", "WACCM-X run 2 (1982-1997)")
+WACCMX_CAPTION = (
+    "WACCM-X (pink) is a free-running WACCM-X v2.1 historical simulation, regional "
+    "16–25°N, 200–210°E 25-cell mean, fitted with the same estimator using its own "
+    "F10.7 forcing over the settled windows of two separately initialised runs; it is a "
+    "model trend, not an observation, plotted at geometric altitude converted from "
+    "geopotential, and only where the model top covers at least 95% of days."
+)
 BROWN_REQUIRED_COLUMNS = {
     "study",
     "variant",
@@ -479,6 +487,7 @@ def compose_figure(
     invocation: list[str] | None = None,
     require_jb: bool = False,
     layout: str = "panels",
+    extra_trend_csvs: tuple[Path, ...] = (),
 ) -> dict[str, object]:
     """Render Figure 6 and write its caption, alt text, and provenance sidecar."""
 
@@ -488,7 +497,12 @@ def compose_figure(
     if not trend_csv.is_file():
         raise FileNotFoundError(f"Trend CSV does not exist: {trend_csv}")
     trends = pl.read_csv(trend_csv)
+    for extra in extra_trend_csvs:
+        if not extra.is_file():
+            raise FileNotFoundError(f"Extra trend CSV does not exist: {extra}")
+        trends = pl.concat([trends, pl.read_csv(extra)], how="diagonal_relaxed")
     jb_included = validate_jb_pair(trends, require_jb=require_jb)
+    waccmx_included = bool(set(WACCMX_DATASETS) & set(trends.get_column("dataset").to_list()))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     import matplotlib.pyplot as plt
@@ -508,9 +522,10 @@ def compose_figure(
     fig.savefig(png_path, dpi=300)
     fig.savefig(pdf_path)
     plt.close(fig)
-    caption_path.write_text(
-        figure_caption(jb_included, layout) + "\n", encoding="utf-8"
-    )
+    caption = figure_caption(jb_included, layout)
+    if waccmx_included:
+        caption += " " + WACCMX_CAPTION
+    caption_path.write_text(caption + "\n", encoding="utf-8")
     alt_text_path.write_text(
         figure_alt_text(jb_included, layout) + "\n", encoding="utf-8"
     )
@@ -543,6 +558,10 @@ def compose_figure(
         "layout": layout,
         "shared_altitude_limits": list(SHARED_ALTITUDE_LIMITS),
         "trend_csv": {"path": str(trend_csv), "sha256": sha256_file(trend_csv)},
+        "extra_trend_csvs": [
+            {"path": str(path), "sha256": sha256_file(path)} for path in extra_trend_csvs
+        ],
+        "waccmx_included": waccmx_included,
         "jb_required": require_jb,
         "jb_included": jb_included,
         "jb_canonical_pair": list(JB_DATASETS),
@@ -573,6 +592,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--require-jb", action="store_true")
     parser.add_argument("--layout", choices=LAYOUTS, default="panels")
+    parser.add_argument(
+        "--extra-trend-csv",
+        type=Path,
+        action="append",
+        default=[],
+        help="additional trend table with the same columns (e.g. WACCM-X model trends)",
+    )
     return parser.parse_args(argv)
 
 
@@ -587,6 +613,7 @@ def main(argv: list[str] | None = None) -> None:
         [Path(__file__).name, *(argv if argv is not None else sys.argv[1:])],
         args.require_jb,
         args.layout,
+        tuple(args.extra_trend_csv),
     )
     print(
         f"Wrote Figure 6 artifacts to {args.output_dir} ({provenance['brown']['digitized_csv']['sha256']})"
