@@ -28,9 +28,17 @@ whose scientific and metadata gates still apply. No analysis has been run.
   records each member's name, archive offset, size, CRC-32, SHA-256 and stored
   size. `COMPLETE.json` records the archive-level checks.
 - Totals: **27,026 daily members**, 91.7 GB stored (from 152.2 GB raw).
-- `.tools/fetch_archive.py` is the downloader. `.tools/waccmx_day.py`
-  (`open_day("YYYY-MM-DD")`) re-checks the CRC and returns an `h5py.File`.
-  h5py is not a project dependency; use `uv run --no-project --with h5py`.
+- The downloader and reader are committed in PR #67:
+  - `scripts/waccmx/fetch_archive.py` (+ `fetch_archive.sge`) is the downloader.
+    The provider FTP directory is passed with `--base-url` or `WACCMX_FTP_BASE`
+    and is not stored in the repository.
+  - `scripts/waccmx/waccmx_day.py` (`open_day("YYYY-MM-DD")`) re-checks the CRC
+    and returns an `h5py.File`. h5py is not a project dependency; use
+    `uv run --no-project --with h5py`.
+
+  The 10 Oct run used a local `.tools/` copy that differed only in having the
+  provider path hard-coded and in recording it as `source` in each
+  `COMPLETE.json` (the committed version records `source_archive`).
 
 ## Coverage
 
