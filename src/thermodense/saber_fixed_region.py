@@ -396,8 +396,10 @@ def prepare_fixed_region(*, input_dir: Path, output_dir: Path, start: date, end:
         day, version = _day(match), f"V{match[3]}.{match[4]}"
         # With nonnegative clocks below 48h, a repeated actual timestamp can
         # occur only in its own or previous archive day. Retain all selected
-        # scan identities, but bound excluded-scan bookkeeping to that overlap.
-        cutoff = datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc)
+        # scan identities, and keep excluded-scan identities for the previous
+        # day too, so reuse across midnight is compared exactly; reuse further
+        # apart is caught by the per-orbit time spans below.
+        cutoff = datetime.combine(day - timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc)
         seen = {key: row for key, row in seen.items()
                 if row["geo_selected"] or row["timestamp_utc"] >= cutoff}
         physical_times = {(row["orbit"], row["event"]): row for row in seen.values()}
