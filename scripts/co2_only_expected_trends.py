@@ -202,18 +202,19 @@ def _plot(table: pl.DataFrame, path: Path, plt: object) -> None:
     for ax, (dataset, title, color) in zip(axes, panels):
         sub = table.filter(pl.col("dataset") == dataset).sort("altitude_km")
         ax.grid(color=grid_c, linewidth=0.8)
-        ax.axvline(0, color=muted, linewidth=0.8)
         if sub.is_empty():
             ax.text(0.5, 0.5, "no overlap with 200-1000 km grid", transform=ax.transAxes, ha="center", color=muted)
         else:
             z = sub["altitude_km"].to_numpy()
-            ax.fill_betweenx(z, sub["observed_ci95_lower"].to_numpy(), sub["observed_ci95_upper"].to_numpy(),
-                             color=color, alpha=0.15, linewidth=0)
-            ax.plot(sub["observed_trend_pct_per_decade"].to_numpy(), z, color=color, linewidth=2,
-                    marker="o", markersize=4, label="observed / modelled total")
-            ax.plot(sub["co2_only_expected_pct_per_decade"].to_numpy(), z, color=ink, linewidth=2,
-                    linestyle=(0, (4, 2)), marker="s", markersize=4, markerfacecolor="white",
-                    label="CO₂-only expectation")
+            ax.axvline(0, color=ink, linewidth=1.2, zorder=1)
+            ax.fill_betweenx(z, sub["without_co2_ci95_lower"].to_numpy(), sub["without_co2_ci95_upper"].to_numpy(),
+                             color=color, alpha=0.18, linewidth=0, zorder=1)
+            ax.plot(sub["without_co2_pct_per_decade"].to_numpy(), z, color=color, linewidth=2.2, marker="o",
+                    markersize=4, label="without CO₂ (95% interval)", zorder=3)
+            ax.plot(sub["observed_trend_pct_per_decade"].to_numpy(), z, color=color, linewidth=1.1,
+                    linestyle=(0, (1, 1.5)), label="observed / modelled total", zorder=2)
+            ax.plot(sub["co2_only_expected_pct_per_decade"].to_numpy(), z, color=muted, linewidth=1.1,
+                    linestyle=(0, (4, 2)), label="CO₂-only expectation", zorder=2)
         ax.set_title(title, fontsize=10, color=ink, loc="left")
         ax.set_xlabel("density trend (%/decade)", color=ink)
         ax.tick_params(colors=muted)
@@ -221,10 +222,10 @@ def _plot(table: pl.DataFrame, path: Path, plt: object) -> None:
             ax.spines[side].set_visible(False)
     axes[0].set_ylabel("altitude (km)", color=ink)
     axes[0].legend(frameon=False, fontsize=8.5, loc="upper left")
-    fig.text(0.01, 0.01, "CO₂-only expectation: Brown et al. (2024) WACCM-X v1.2.2 CO2_only scaling factors "
-             "(CC BY 4.0) on each series' own days, CO2 and F10.7, fitted with the same solar-adjusted "
-             "estimator. Shading: 95% HAC interval of the observed/modelled trend.", color=muted, fontsize=7.5)
-    fig.tight_layout(rect=(0, 0.04, 1, 1))
+    fig.text(0.01, 0.01, "Without CO₂: each series minus the Brown et al. (2024) WACCM-X v1.2.2 CO₂-only response "
+             "(CC BY 4.0) on its own days, CO₂ and F10.7,\nrefitted with the same solar-adjusted estimator; shading "
+             "is its 95% HAC interval (observational noise only, not CO₂-response uncertainty).", color=muted, fontsize=7.5)
+    fig.tight_layout(rect=(0, 0.07, 1, 1))
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path.with_suffix(".png"), dpi=180)
     fig.savefig(path.with_suffix(".pdf"))
