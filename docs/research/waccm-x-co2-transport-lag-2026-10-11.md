@@ -36,7 +36,10 @@ observation, and not a controlled CO₂ experiment.
      running mean that never bridges the 2022 gap;
    - compute tracer age `t − S⁻¹(c_z(t))` against the prescribed surface
      `co2vmr` (monotonic after deseasonalizing);
-   - compute intervals with a 24-month moving-block bootstrap (1,000 draws).
+   - compute intervals with a 24-month moving-block bootstrap (1,000 draws,
+     seed 20261011) whose blocks never cross the missing 2022 or running-mean
+     gaps (corrected 2026-10-11 after review: means unchanged; mean-age
+     intervals moved by ≤ 0.03 years, trend intervals by ≤ 0.14 years/decade).
 
    On synthetic accelerating series with a seasonal cycle and the 2022 gap, the
    inversion recovers known lags of 1, 3 and 4.2 years to within 0.001 years.
@@ -62,14 +65,14 @@ excluded from any upper-atmosphere CO₂ or cooling analysis.
 
 | Height | Run 2 (1982–1997) | Run 3 (2006–2024) |
 |---|---|---|
-| 20 km | 1.11 [1.04, 1.20] y | 1.10 [1.05, 1.16] y |
-| 40 km | 2.92 [2.86, 3.00] y | 3.01 [2.96, 3.07] y |
-| 60 km | 3.01 [2.91, 3.13] y | 3.30 [3.24, 3.38] y |
-| 70 km | 4.10 [4.05, 4.23] y | 4.16 [4.07, 4.30] y |
+| 20 km | 1.11 [1.04, 1.20] y | 1.10 [1.03, 1.13] y |
+| 40 km | 2.92 [2.87, 3.02] y | 3.01 [2.95, 3.07] y |
+| 60 km | 3.01 [2.93, 3.13] y | 3.30 [3.22, 3.36] y |
+| 70 km | 4.10 [4.05, 4.23] y | 4.16 [4.06, 4.29] y |
 
 - Runs 2 and 3 agree at 20, 40 and 70 km. Starting the window at year 6 or 10
   changes the means by ≤0.08 years.
-- Run 3 shows small positive within-run trends (60 km: +0.19 [+0.10, +0.30]
+- Run 3 shows small positive within-run trends (60 km: +0.19 [+0.11, +0.33]
   years per decade). That could be circulation change or the known bias of
   tracer age when growth accelerates; it is unresolved.
 - At 80 km and above, CO₂ is already depleted (CO₂/surface ratio 0.94–0.95),

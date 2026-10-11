@@ -52,3 +52,13 @@ def test_block_starts_skip_nan_months_and_fail_when_no_block_fits():
     assert all(not (s <= 30 < s + 24) for s in lag.block_starts(t, values, block=24))
     with pytest.raises(ValueError):
         lag.block_starts(t[:20], values[:20], block=24)
+
+
+def test_supported_months_drop_a_segment_too_short_for_any_block():
+    keys, t = monthly_axis("2006-01", "2024-12")
+    values = np.ones(len(t))
+    after_gap = keys >= np.datetime64("2023-01")
+    values[after_gap & (keys < np.datetime64("2023-07"))] = np.nan  # leave 18 finite months
+    keep = lag.supported_months(t, values, block=24)
+    assert keep[keys < np.datetime64("2022-01")].all()
+    assert not keep[after_gap].any()

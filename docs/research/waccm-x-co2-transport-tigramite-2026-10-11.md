@@ -74,10 +74,12 @@ Figure: `data/derived/waccmx_co2_tigramite_v1/lag_correlation.png` (local only).
   - about 3 years to 40–60 km;
   - about 4.1–4.2 years to 70 km.
 - Above about 75 km, photolysis and diffusive separation deplete CO₂, so its
-  age cannot be read from CO₂ alone. Reaching the thermosphere then takes about
-  as long as reaching the upper mesosphere: roughly **4–5 years**. Vertical
-  diffusion above the turbopause is much faster than the years of mesospheric
-  transport, but that last step is physical reasoning, not a measurement here.
+  age cannot be read from CO₂ alone. **No transit time to the thermosphere is
+  measured here.** The 70 km tracer age (about 4 years) is a lower bound on how
+  long a surface change takes to get that far. Turning it into a
+  thermospheric response time would need an explicit transport calculation or
+  an inert tracer. (A "4–5 years" estimate given earlier was removed on
+  2026-10-11 after review as unsupported.)
 - The long-term increase arrives attenuated: about 55–75% of the surface growth
   rate at 100–140 km after a solar adjustment.
 

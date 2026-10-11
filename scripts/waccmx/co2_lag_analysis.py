@@ -86,6 +86,19 @@ def block_starts(t, values, block=24):
     return np.array(starts)
 
 
+def supported_months(t, values, block=24):
+    """Months that lie in at least one valid bootstrap block.
+
+    Estimates and their intervals are computed on these months only, so both
+    describe the same sample (e.g. run 3's 12 usable 2023-24 months, too short
+    for any 24-month block, are excluded from both).
+    """
+    keep = np.zeros(len(values), dtype=bool)
+    for s in block_starts(t, values, block):
+        keep[s:s + block] = True
+    return keep
+
+
 def block_ci(t, values, rng, boot=1000, block=24, stat=np.nanmean):
     """Moving-block bootstrap 95% interval of stat over a monthly series."""
     starts = block_starts(t, values, block)
@@ -170,13 +183,17 @@ def analyse(directory, out, skip_years=(6, 8, 10), boot=1000, seed=20261011):
             use = t >= t[0] + skip
             w = {"from": float(t[use][0]), "to": float(t[use][-1]), "months": int(use.sum()), "age": {}, "ratio": {}}
             for h, a in r["age"].items():
-                v = a[use]
-                w["age"][str(h)] = {"mean_years": float(np.nanmean(v)), "ci95": block_ci(t[use], v, rng, boot),
-                                    "trend_years_per_decade": slope_per_decade(t[use], v),
-                                    "trend_ci95": trend_ci(t[use], v, rng, boot)}
+                keep = supported_months(t[use], a[use])
+                tk, v = t[use][keep], a[use][keep]
+                w["age"][str(h)] = {"mean_years": float(np.nanmean(v)), "ci95": block_ci(tk, v, rng, boot),
+                                    "trend_years_per_decade": slope_per_decade(tk, v),
+                                    "trend_ci95": trend_ci(tk, v, rng, boot),
+                                    "months_used": int(keep.sum()), "last_month_used": float(tk[-1])}
             for h, q in r["ratio"].items():
-                v = q[use]
-                w["ratio"][str(h)] = {"mean": float(np.nanmean(v)), "ci95": block_ci(t[use], v, rng, boot)}
+                keep = supported_months(t[use], q[use])
+                tk, v = t[use][keep], q[use][keep]
+                w["ratio"][str(h)] = {"mean": float(np.nanmean(v)), "ci95": block_ci(tk, v, rng, boot),
+                                      "months_used": int(keep.sum())}
             f = np.where(use, r["f107a"], np.nan)
             w["co2_growth"] = {"surface": growth(t, np.where(use, r["surface"], np.nan), f),
                                **{str(h): growth(t, np.where(use, c, np.nan), f) for h, c in r["co2"].items()}}
@@ -227,7 +244,7 @@ def plot(result, runs, path):
         ax.errorbar(m, np.array(hs) + (k - 1) * 0.8, xerr=[lo, hi], color=colors[k], marker=markers[k],
                     markersize=5, linewidth=2, capsize=0, markeredgecolor="#fcfcfb", markeredgewidth=1,
                     label="%s, %d-%d" % (label.split(" ")[0], int(entry["windows"]["8"]["from"]),
-                                         int(entry["windows"]["8"]["to"])))
+                                         int(entry["windows"]["8"]["age"]["40"]["last_month_used"])))
     ax.set_title("Equilibrated tracer age (window from year 8)", fontsize=9.5, color=ink, loc="left")
     ax.set_xlabel("tracer age (years)")
     ax.set_ylabel("geopotential height (km)")
