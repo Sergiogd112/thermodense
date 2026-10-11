@@ -49,3 +49,16 @@ def test_baseline_parquet_calendar_is_validated(tmp_path):
     pd.DataFrame({"timestamp": pd.to_datetime(["2014-01-01 00:00", "2014-01-01 01:00"])}).to_parquet(off_grid)
     with pytest.raises(ValueError, match="three-hour"):
         stream.load_baseline_calendar(off_grid)
+
+
+def test_changed_sampling_geometry_does_not_resume():
+    saved = {"schema": 1, **stream.LEGACY_PATH_DEFAULTS, "centers_sha256": "old"}
+    current = {**saved, "centers_sha256": "new"}
+    assert stream.with_legacy_path_defaults(saved, current) != current
+
+
+def test_pre_geometry_checkpoint_resumes_only_with_default_paths():
+    current = {"schema": 1, **stream.LEGACY_PATH_DEFAULTS, "centers_sha256": "abc"}
+    assert stream.with_legacy_path_defaults({"schema": 1}, current) == current
+    custom = {**current, "samples_path": "custom.parquet"}
+    assert stream.with_legacy_path_defaults({"schema": 1, "samples_path": "custom.parquet"}, custom) != custom

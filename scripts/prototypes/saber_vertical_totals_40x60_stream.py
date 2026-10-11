@@ -343,9 +343,16 @@ def with_legacy_path_defaults(
     """Fill path keys absent from an old checkpoint when the current run uses the defaults."""
 
     upgraded = dict(saved)
+    legacy = all(key not in saved for key in LEGACY_PATH_DEFAULTS)
     for key, default in LEGACY_PATH_DEFAULTS.items():
         if key not in upgraded and current.get(key) == default:
             upgraded[key] = default
+    # Checkpoints older than the geometry hash cannot be checked against it; accept them
+    # only under the same default-path rule, the best available evidence of identity.
+    if "centers_sha256" in current and "centers_sha256" not in upgraded and legacy and all(
+        current.get(key) == default for key, default in LEGACY_PATH_DEFAULTS.items()
+    ):
+        upgraded["centers_sha256"] = current.get("centers_sha256")
     return upgraded
 
 
@@ -740,6 +747,9 @@ def main() -> None:
             "channels": list(CHANNELS),
             "cell_widths_degrees": list(cell_widths),
             "samples_path": str(samples_path),
+            # Binds the sampling geometry itself, not just its path: a regenerated
+            # samples file with different longitudes must not resume old sums.
+            "centers_sha256": hashlib.sha256(np.ascontiguousarray(centers, dtype=np.float64).tobytes()).hexdigest(),
             **calendar_identity,
             "altitude_bounds_km": list(ALTITUDE_BOUNDS_KM),
             "minimum_span_km": MIN_ALTITUDE_SPAN_KM,
