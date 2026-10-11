@@ -34,8 +34,12 @@ whose scientific and metadata gates still apply. No analysis has been run.
 
 ## Coverage
 
-- **1950-01-02 through 2024-12-31**, no duplicate days. Each day has 24 hourly
-  records (per the 5 Oct inspection) on a 5 × 5 grid with 126 levels.
+- **1950-01-02 through 2024-12-31**, no duplicate days. Every member has 24
+  hourly records and 126-level profiles on a 5 × 5 grid. This was checked for
+  all 27,026 members, not just a sample: the extractor
+  (`scripts/waccmx/extract_regional_daily.py`, PR #67) stops on any other time
+  length or profile shape, and two full passes (SGE jobs 1580 and 1589) both
+  completed. (Clarified 2026-10-11 after review.)
 - Missing: **all of 2022** (no archive was delivered), and **2023-01-31 and
   2023-02-03** (absent from the provider's 2023 archive).
 - Three 2023 members (06-14 to 06-16) are 1,403 bytes larger than all the
