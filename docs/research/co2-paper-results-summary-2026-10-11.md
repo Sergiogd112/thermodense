@@ -16,7 +16,7 @@ responses?**
 | Prediction (Karman ± CO₂, cheap controls) | Closed | No CO₂ information beyond a smooth time coordinate |
 | Observed trends | Done, one input pending | About −4 to −7 %/decade at 250–575 km, solar-adjusted |
 | Model physics (WACCM-X) | Partial | Historical total trend matches observations; CO₂-only share unknown |
-| CO₂-only expectation | First pass done | Above ~300 km, the published WACCM-X CO₂-only response matches the observed trends; below, it explains ~65–85% |
+| Without CO₂ | First pass done | Removing the published WACCM-X CO₂ response leaves no detectable trend above ~275 km; a small decline remains at 200–250 km |
 
 ## 1. Prediction: no CO₂-specific information
 
@@ -100,36 +100,34 @@ Receipts: [download](waccm-x-regional-download-2026-10-10.md),
   **total** historical trend, from all forcings together. Coverage limits it to
   ≤ 427 km.
 
-## 4. CO₂-only expectation from published controlled runs
+## 4. Density trends without CO₂
 
 [Receipt](co2-only-expectation-2026-10-11.md). The Brown et al. (2024) WACCM-X
-v1.2.2 `CO2_only` scaling grid (fixed CO₂ and F10.7, Kp = 0, CC BY 4.0) was
-applied on each series' own days, CO₂ and F10.7 and fitted with the same
-estimator.
+v1.2.2 `CO2_only` response (fixed CO₂ and F10.7, Kp = 0, CC BY 4.0) was removed
+from each series day by day, on its own days, CO₂ and F10.7. The series was then
+refitted with the same estimator, which keeps the observed 95% interval.
 
-- **Above about 300 km, CO₂ alone matches the observed trends** (shares of
-  observed):
-  - global mean, 325–575 km: 0.95–1.09 (at 400 km, −5.38 expected against
-    −4.94 [−5.99, −3.88] observed);
-  - HASDM, 300–600 km: 0.94–1.07.
-
-  All of these lie inside the observed intervals.
-- **Below about 300 km the observations decline faster than CO₂ alone predicts**
-  (shares 0.64–0.87 at 200–275 km).
-- WACCM-X v2.1's own historical windows deviate in opposite directions from the
-  CO₂-only expectation (0.52–0.74 for 1982–1997; 0.95–1.60 for 2006–2024),
-  which points to model-version and window dependence.
-- **Claim:** CO₂-driven contraction, as modelled, is sufficient to explain the
-  observed trends above about 300 km. It is not shown to be the unique cause,
-  and the expectation carries no interval (one model, with large uncertainty in
-  the CO₂–O quenching rate).
+- **Above about 275 km, no trend remains.**
+  - Global mean, 275–575 km: without-CO₂ trends of −0.56 to +0.47 %/decade, all
+    intervals containing zero. At 400 km: observed −4.94, without CO₂ +0.47
+    [−0.60, +1.55].
+  - HASDM, 225–825 km: the same, with wider intervals.
+- **At the lowest levels a significant decline remains:** −0.89 [−1.55, −0.22]
+  at 250 km (global mean) and −1.70 [−2.99, −0.39] at 200 km (HASDM).
+- WACCM-X v2.1's own historical windows leave residuals of opposite sign
+  (about −2 in 1982–1997, up to +2.6 in 2006–2024), which indicates window and
+  model dependence.
+- **Claim:** given this model's CO₂ response, the observed trends above about
+  275 km are consistent with CO₂ alone. CO₂ is sufficient there, but other
+  causes are not excluded. The interval omits uncertainty in the CO₂ response:
+  a 30% error would shift the without-CO₂ trend by about ±1.5 %/decade at 400 km.
 
 ## 5. What is not established
 
-- **A CO₂ share with uncertainty.** Section 4 rests on one model's published
-  grid with no interval. Run-level controlled output (requested from the
+- **Uncertainty in the CO₂ response.** Section 4 rests on one model's published
+  grid, and its intervals cover observational noise only. Run-level controlled output (requested from the
   authors) or several models' CO₂ responses are needed to bound it.
-- What drives the extra decline below about 300 km.
+- What drives the residual decline at 200–250 km.
 - Why the empirical-model baselines trend at all (MSIS near −1.4, JB2008 near
   −10 %/decade at 400 km): driver drift, sampling or construction.
 

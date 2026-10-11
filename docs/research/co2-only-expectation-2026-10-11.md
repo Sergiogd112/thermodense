@@ -1,9 +1,9 @@
-# CO₂-only expectation for the density trends — 2026-10-11
+# Density trends without CO₂ — 2026-10-11
 
-How much of each observed (and WACCM-X historical) density trend would CO₂ alone
-produce, according to the published controlled WACCM-X experiments of Brown et
-al. (2024)? This is a model-conditioned consistency check, not an attribution
-from the observations.
+Is any density trend left once the CO₂ response from published controlled WACCM-X
+experiments (Brown et al., 2024) is removed from each series? This is a
+model-conditioned test of whether CO₂ is sufficient to explain the observed
+trends, not an attribution from the observations alone.
 
 ## Source
 
@@ -27,93 +27,96 @@ from the observations.
 For every series and altitude in the Figure 6 trend set (global mean, HASDM;
 `current_density_trends_by_dataset_altitude.csv`) and the WACCM-X settled windows:
 
-1. **Synthetic series.** On exactly the days used in that series' fit, build
-   `log10 R(CO₂(t), F10.7₈₁(t), z)`. CO₂ is NOAA Mauna Loa deseasonalized
-   monthly data shifted to the NOAA global mean (offset 0.94 ppm) and
-   interpolated to days.
-2. **Same estimator.** Fit it with the solar-adjusted method used for the
-   observations (time + F10.7₈₁ + F10.7₈₁², 27-day HAC), so the expectation and
-   the observation share their days, solar weighting and definition.
-3. **Constant %/ppm.** ln R is linear in CO₂, with the slope fitted per altitude
-   and F10.7 over the grid's first four CO₂ levels (369–431 ppm, covering the
-   historical record); this follows Brown et al.'s Table 3 convention.
-   Piecewise interpolation was tried first and rejected: at 200–300 km and
-   70 sfu, single grid segments are noisy (−0.60 then +0.11 %/ppm). A
-   three-level fit (369–402 ppm) changes the expectations by ≤ 0.5 %/decade.
-4. **Clamping and range.** F10.7 is clamped to 70–200 sfu, and altitudes outside
-   200–1000 km are skipped.
+1. **CO₂-only signal.** On exactly the days used in that series' fit, compute
+   `log10 R(CO₂(t), F10.7₈₁(t), z)`. CO₂ is NOAA Mauna Loa deseasonalized monthly
+   data shifted to the NOAA global mean (offset 0.94 ppm) and interpolated to
+   days. ln R is linear in CO₂ (constant %/ppm, Brown et al.'s Table 3
+   convention), with the slope fitted per altitude and F10.7 over the grid's
+   first four CO₂ levels (369–431 ppm, covering the historical record).
+   - Piecewise interpolation was rejected: at 200–300 km and 70 sfu, single
+     grid segments are noisy (−0.60 then +0.11 %/ppm).
+   - A three-level fit (369–402 ppm) changes results by ≤ 0.5 %/decade.
+   - F10.7 is clamped to 70–200 sfu; altitudes outside 200–1000 km are skipped.
+2. **Without CO₂.** Subtract that signal from the series day by day and refit
+   with the same solar-adjusted estimator (time + F10.7₈₁ + F10.7₈₁², 27-day HAC).
+   The resulting trend keeps the observed 95% interval, so an interval
+   containing zero means no trend remains once this model's CO₂ response is
+   removed. This assumes additivity in log density.
+3. **For context**, the CO₂-only signal alone is fitted the same way; it is the
+   trend CO₂ would produce by itself.
 
-## Results (%/decade; observed 95% HAC interval in brackets)
+## Results (%/decade)
 
-| Series | Altitude | Observed / modelled total | CO₂-only expectation | Share |
+| Series | Altitude | Observed / modelled total | CO₂-only | **Without CO₂** [95%] |
 |---|---|---|---|---|
-| Orbit-derived global mean, 1967–2019 | 250 km | −4.12 [−4.78, −3.45] | −3.25 | 0.79 |
-| | 400 km | −4.94 [−5.99, −3.88] | −5.38 | 1.09 |
-| | 575 km | −6.18 [−7.44, −4.90] | −5.85 | 0.95 |
-| HASDM Mauna Loa, 2000–2025 | 200 km | −4.65 [−5.91, −3.37] | −3.00 | 0.64 |
-| | 300 km | −5.07 [−7.03, −3.08] | −4.75 | 0.94 |
-| | 400 km | −5.76 [−8.33, −3.11] | −6.18 | 1.07 |
-| | 575 km | −6.78 [−9.95, −3.50] | −6.93 | 1.02 |
-| | 800 km | −6.36 [−9.64, −2.95] | −7.60 | 1.20 |
-| WACCM-X v2.1 regional, 2006–2024 | 206 km | −3.90 [−5.45, −2.33] | −3.70 | 0.95 |
-| | 398 km | −5.94 [−9.27, −2.49] | −8.33 | 1.40 |
-| WACCM-X v2.1 regional, 1982–1997 | 206 km | −4.27 [−6.15, −2.34] | −2.24 | 0.52 |
-| | 398 km | −6.61 [−10.80, −2.22] | −4.89 | 0.74 |
+| Orbit-derived global mean, 1967–2019 | 250 km | −4.11 | −3.25 | **−0.89 [−1.55, −0.22]** |
+| | 275 km | −4.21 | −3.66 | −0.56 [−1.29, +0.18] |
+| | 325 km | −4.44 | −4.40 | −0.03 [−0.91, +0.85] |
+| | 400 km | −4.94 | −5.38 | +0.47 [−0.60, +1.55] |
+| | 575 km | −6.17 | −5.84 | −0.34 [−1.65, +0.97] |
+| HASDM Mauna Loa, 2000–2025 | 200 km | −4.65 | −2.99 | **−1.70 [−2.99, −0.39]** |
+| | 225 km | −4.83 | −3.43 | −1.44 [−2.94, +0.08] |
+| | 300 km | −5.07 | −4.74 | −0.34 [−2.39, +1.75] |
+| | 400 km | −5.75 | −6.17 | +0.45 [−2.29, +3.27] |
+| | 575 km | −6.78 | −6.92 | +0.16 [−3.26, +3.70] |
+| | 800 km | −6.35 | −7.60 | +1.35 [−2.26, +5.09] |
+| WACCM-X v2.1 regional, 2006–2024 | 206 km | −3.90 | −3.69 | −0.21 [−1.82, +1.42] |
+| | 398 km | −5.94 | −8.33 | +2.61 [−1.03, +6.38] |
+| WACCM-X v2.1 regional, 1982–1997 | 206 km | −4.26 | −2.23 | **−2.07 [−3.99, −0.11]** |
+| | 398 km | −6.60 | −4.89 | −1.80 [−6.17, +2.77] |
 
 Figure: `outputs/figures/results/co2_only_expected_trends/co2_only_expected_trends.png`
-(local); full table `co2_only_expected_trends.csv`.
+(local; the without-CO₂ trend and its interval against zero, with the observed and
+CO₂-only trends as context). Full table: `co2_only_expected_trends.csv`.
 
 ## Reading
 
-- **Above about 300 km, CO₂ alone accounts for the observed trends in this model.**
-  - Global mean at 325–575 km: shares 0.95–1.09.
-  - HASDM at 300–600 km: shares 0.94–1.07.
+- **Above about 275 km (global mean) and 225 km (HASDM), no trend is left once
+  CO₂ is removed.**
+  - Global mean, 275–575 km: every without-CO₂ trend is between −0.56 and
+    +0.47 %/decade, and every interval contains zero.
+  - HASDM, 225–825 km: the same holds, with wider intervals (±1.5 to ±3.7).
 
-  Every expectation above 300 km lies inside the observed 95% interval. Above
-  600 km the CO₂-only expectation is larger than the HASDM trend (shares
-  1.09–1.21), though still inside its wide interval. A purely
-  CO₂-driven contraction of the size WACCM-X v1.2.2 simulates is therefore
-  sufficient to explain the observed 1967–2019 and 2000–2025 trends there.
-- **Below about 300 km the observations decline faster than CO₂ alone predicts.**
-  The shares are 0.64–0.87 at 200–275 km. In the grid, the CO₂ response weakens
-  sharply below 300 km, while the observed trends stay near −4 to −5 %/decade.
-  Possible contributors include other forcings (ozone, other greenhouse gases,
-  geomagnetic and lower-atmosphere changes), the products' low-altitude
-  calibration, or a weaker model response. These data cannot separate them.
-- **WACCM-X's own historical run does not follow the CO₂-only expectation
-  consistently.** For 1982–1997 its total trend is stronger than the CO₂-only
-  value (shares 0.52–0.74); for 2006–2024 it is weaker above 250 km (shares
-  1.19–1.60). The two windows differ in CO₂ growth rate, solar activity and
-  model version, the runs are regional rather than global and do not hold Kp
-  at 0, and the run-3 window spans the deep 2008 and 2019 minima. This
-  comparison is consistent with model-version and window dependence, not with
-  one stable CO₂ share.
-- **What can be claimed** (protocol "fingerprint consistency"): the sign,
-  magnitude and altitude growth of the observed trends above about 300 km match
-  a CO₂-only contraction as modelled by WACCM-X. That supports CO₂ as a
-  sufficient explanation, not as the unique one. A single model of the CO₂
-  response, with no intervals on the expectation, does not identify the CO₂
-  share.
+  Against observed declines of −4 to −7 %/decade, this means that, given this
+  model's CO₂ response, other contributions at these heights are at most about
+  ±1.5 %/decade in 1967–2019.
+- **At the lowest levels a significant decline remains:** −0.89 [−1.55, −0.22]
+  at 250 km in the global mean and −1.70 [−2.99, −0.39] at 200 km in HASDM. The
+  model's CO₂ response weakens sharply below 300 km while the observed trends do
+  not. Candidates include other forcings (ozone, other greenhouse gases,
+  geomagnetic or lower-atmosphere changes), the products' low-altitude behaviour,
+  or a too-weak modelled CO₂ response. These data cannot separate them.
+- **WACCM-X's own historical run** leaves residuals of opposite sign in its two
+  windows: about −2 in 1982–1997 (significant at 206 km) and up to +2.6 in
+  2006–2024 (not significant). The windows differ in CO₂ growth, solar activity
+  and model version, and the runs are regional and not held at Kp = 0. This
+  indicates window and model dependence, not a stable residual.
+- **Claim** (protocol "fingerprint consistency"): given the WACCM-X CO₂ response
+  of Brown et al. (2024), the observed density trends above about 275 km are
+  consistent with CO₂ alone, with no residual trend detectable. CO₂ is
+  therefore a sufficient explanation there. That does not show other causes
+  are absent, and the interval does not include uncertainty in the CO₂
+  response.
 
 ## Limits
 
-- One model and version (v1.2.2) for the CO₂ response. The CO₂–O quenching
-  rate alone changes modelled trends by up to about 40% (Solomon et al. 2015,
-  in Brown's Table 2). No interval is attached to the expectation; its
-  uncertainty is dominated by model choice, not by the fit.
-- Global-mean annual means at Kp = 0, applied to the global-mean product,
-  regional HASDM and regional WACCM-X alike.
-- A constant %/ppm assumes linearity across 321–431 ppm. For 1967–1999 this
-  extrapolates below the grid's 369 ppm floor, as in Brown et al.'s own
-  conversion.
-- The comparison inherits the observed trends' estimator, sampling and product
-  caveats.
+- **One model and version (v1.2.2) for the CO₂ response.** A 30% error in that
+  response would shift the without-CO₂ trend by about ±1.5 %/decade at 400 km.
+  The CO₂–O quenching rate alone changes modelled trends by up to about 40%
+  (Solomon et al. 2015, in Brown's Table 2).
+- **Scope.** The response is a global-mean annual mean at Kp = 0, applied to the
+  global-mean product, regional HASDM and regional WACCM-X alike.
+- **Linearity.** A constant %/ppm assumes linearity across 321–431 ppm; for
+  1967–1999 this extrapolates below the grid's 369 ppm floor, as in Brown et
+  al.'s own conversion. Additivity in log density is also assumed.
+- **Inherited caveats.** The comparison inherits the observed trends'
+  estimator, sampling and product caveats.
 
 ## Next
 
-- If the controlled runs the user requested arrive, replace the published grid
-  with run-level output to put intervals on the expectation and to reach below
-  200 km.
-- Possible additions: the Solomon (2015, 2018, 2019) and Cnossen (2020) modelled
-  trends as extra CO₂-response estimates, to show how model-dependent the
-  expectation is.
+- If the controlled runs the user requested arrive, use run-level output to put
+  an interval on the CO₂ response, propagate it into the without-CO₂ trend, and
+  reach below 200 km.
+- Meanwhile, bracket the CO₂ response with the other published model estimates
+  (Solomon 2015, 2018, 2019; Cnossen 2020) to show how model-dependent the
+  conclusion is.
