@@ -63,16 +63,21 @@ excluded from any upper-atmosphere CO₂ or cooling analysis.
 
 **2. Equilibrated tracer age** (window from year 8; mean [95% block bootstrap]):
 
-| Height | Run 2 (1982–1997) | Run 3 (2006–2024) |
+| Height | Run 2 (1982–1997) | Run 3 (2006–mid-2021) |
 |---|---|---|
-| 20 km | 1.11 [1.04, 1.20] y | 1.10 [1.03, 1.13] y |
-| 40 km | 2.92 [2.87, 3.02] y | 3.01 [2.95, 3.07] y |
-| 60 km | 3.01 [2.93, 3.13] y | 3.30 [3.22, 3.36] y |
-| 70 km | 4.10 [4.05, 4.23] y | 4.16 [4.06, 4.29] y |
+| 20 km | 1.11 [1.04, 1.20] y | 1.09 [1.03, 1.13] y |
+| 40 km | 2.92 [2.87, 3.02] y | 3.00 [2.94, 3.07] y |
+| 60 km | 3.01 [2.93, 3.13] y | 3.29 [3.23, 3.36] y |
+| 70 km | 4.10 [4.05, 4.23] y | 4.16 [4.06, 4.31] y |
+
+Run 3 uses only months inside a complete 24-month block: its 2023–24
+continuation leaves 12 smoothed months, too short for any block, so it is
+excluded from both the means and their intervals (aligned 2026-10-11 after
+review).
 
 - Runs 2 and 3 agree at 20, 40 and 70 km. Starting the window at year 6 or 10
   changes the means by ≤0.08 years.
-- Run 3 shows small positive within-run trends (60 km: +0.19 [+0.11, +0.33]
+- Run 3 shows small positive within-run trends (60 km: +0.23 [+0.09, +0.34]
   years per decade). That could be circulation change or the known bias of
   tracer age when growth accelerates; it is unresolved.
 - At 80 km and above, CO₂ is already depleted (CO₂/surface ratio 0.94–0.95),
@@ -80,9 +85,9 @@ excluded from any upper-atmosphere CO₂ or cooling analysis.
   reported as one.
 
 **3. Depletion above 80 km** (CO₂ / current surface value, run 3 year-8
-window): 0.944 at 80 km, 0.736 at 90 km, 0.387 at 100 km, 0.169 at 110 km and
-0.083 at 120 km. It declines slowly from run to run (100 km: 0.413 → 0.395 →
-0.387).
+window): 0.944 at 80 km, 0.736 at 90 km, 0.388 at 100 km, 0.170 at 110 km and
+0.084 at 120 km. It declines slowly from run to run (100 km: 0.413 → 0.395 →
+0.388).
 
 **4. CO₂ growth in the cooling region tracks the surface only partially.**
 Trend of ln CO₂ in % per decade, raw / adjusted for a linear F10.7a term:
