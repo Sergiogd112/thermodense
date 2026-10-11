@@ -158,3 +158,22 @@ def test_decode_vires_skips_months_without_rows(tmp_path: Path) -> None:
 
     assert decode_vires_single("champ", str(source), str(output), str(tmp_path / "m.csv")) is None
     assert not output.exists()
+
+
+def test_interrupted_compression_leaves_no_final_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    csv_path = tmp_path / "CH_DNS_ACC_2003_01_vires.csv"
+    csv_path.write_text("a,b\n1,2\n")
+    entry = ManifestEntry(path=str(csv_path), url="u", status="downloaded", timestamp="t", size_bytes=8)
+
+    def interrupted(source, target):
+        target.write(b"partial")
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(vires.shutil, "copyfileobj", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        vires._compress(entry, csv_path)
+
+    gz_path = csv_path.with_name(csv_path.name + ".gz")
+    assert not gz_path.exists()  # a later run must not skip this month
+    assert not list(tmp_path.glob("*.partial"))
+    assert csv_path.exists()  # the downloaded CSV is kept until compression succeeds

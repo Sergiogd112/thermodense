@@ -83,10 +83,20 @@ def month_path(collection: str, month: date, root: Path = DEST_DIR) -> Path:
 
 
 def _compress(entry: ManifestEntry, csv_path: Path) -> ManifestEntry:
-    """Replace a downloaded CSV with its gzip version and update the entry."""
+    """Replace a downloaded CSV with its gzip version and update the entry.
+
+    The archive is written to a temporary name and renamed only when complete,
+    so an interrupted compression never leaves a final-looking file that a
+    later run would skip.
+    """
     gz_path = csv_path.with_name(csv_path.name + ".gz")
-    with csv_path.open("rb") as source, gzip.open(gz_path, "wb") as target:
-        shutil.copyfileobj(source, target)
+    partial = gz_path.with_name(gz_path.name + ".partial")
+    try:
+        with csv_path.open("rb") as source, gzip.open(partial, "wb") as target:
+            shutil.copyfileobj(source, target)
+        partial.replace(gz_path)
+    finally:
+        partial.unlink(missing_ok=True)
     csv_path.unlink()
     entry.path = entry.path + ".gz"
     entry.size_bytes = gz_path.stat().st_size
