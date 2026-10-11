@@ -151,6 +151,7 @@ def analyse(directory, out, skip_years=(6, 8, 10), boot=1000, seed=20261011):
               "surface": {"first_month_centre": float(surface[0][0]), "last_month_centre": float(surface[0][-1]),
                           "ppm": [float(surface[1][0] * 1e6), float(surface[1][-1] * 1e6)]},
               "deseasonalization": "centred 2x12-month running mean, never bridging missing months (2022)",
+              "bootstrap_draws": boot, "bootstrap_seed": seed, "bootstrap_block_months": 24,
               "uncertainty": f"24-month moving-block bootstrap, {boot} draws, blocks never crossing missing "
                              "months; describes month-to-month variability "
                              "of one free-running model realisation, not model or forcing uncertainty",
