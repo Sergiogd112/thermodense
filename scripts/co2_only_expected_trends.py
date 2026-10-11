@@ -12,9 +12,12 @@ counterpart on exactly the days used in its trend fit,
 (``fit_trend``: time + F10.7_81 + F10.7_81^2, 27-day HAC). Comparing the two trends
 asks how much of each observed trend this model's CO2 response accounts for.
 The complementary "without CO2" trend removes the CO2-only signal from the series
-day by day and refits it, which keeps the observed HAC interval: an interval
-containing zero means no trend is left once this model's CO2 response is removed.
-It assumes additivity in log density and ignores uncertainty in the CO2 response.
+day by day and refits it; its HAC interval is recomputed from the refitted
+residuals (it is not the observed interval). An interval containing zero means
+no statistically detectable net trend remains, conditional on this CO2
+response; a wide interval can still contain substantial trends, and the net
+residual does not bound individual other causes. It assumes additivity in log
+density and ignores uncertainty in the CO2 response.
 
 Assumptions, stated in the outputs:
 - surface CO2: for observational series, NOAA Mauna Loa deseasonalized monthly
