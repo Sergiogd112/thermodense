@@ -11,6 +11,10 @@ counterpart on exactly the days used in its trend fit,
 ``log10 R(CO2(t), F10.7_81(t), z)``, and fits it with the same estimator
 (``fit_trend``: time + F10.7_81 + F10.7_81^2, 27-day HAC). Comparing the two trends
 asks how much of each observed trend this model's CO2 response accounts for.
+The complementary "without CO2" trend removes the CO2-only signal from the series
+day by day and refits it, which keeps the observed HAC interval: an interval
+containing zero means no trend is left once this model's CO2 response is removed.
+It assumes additivity in log density and ignores uncertainty in the CO2 response.
 
 Assumptions, stated in the outputs:
 - surface CO2: NOAA Mauna Loa deseasonalized monthly means, shifted to the NOAA
@@ -147,6 +151,11 @@ def expected_rows(
 
     expected = co2_only(grid)
     alternative = co2_only(variant)["trend_percent_per_decade"] if variant else float("nan")
+    # Without CO2: remove the CO2-only signal day by day and refit (assumes additivity in log density).
+    without = df.with_columns(
+        (pl.col(spec.value_col) - grid.ln_ratio(spec.altitude_km, co2, f107) / np.log(10.0)).alias("without_co2")
+    )
+    residual = fit_trend(SeriesSpec(spec.dataset, spec.altitude_km, spec.date_col, "without_co2", without, spec.f107_col))
     obs, exp = observed["trend_percent_per_decade"], expected["trend_percent_per_decade"]
     return {
         "dataset": spec.dataset,
@@ -163,7 +172,9 @@ def expected_rows(
         "co2_only_expected_pct_per_decade": exp,
         "co2_only_expected_3pt_slope_pct_per_decade": alternative,
         "co2_only_share_of_observed": exp / obs if obs else float("nan"),
-        "residual_not_explained_pct_per_decade": obs - exp,
+        "without_co2_pct_per_decade": residual["trend_percent_per_decade"],
+        "without_co2_ci95_lower": residual["trend_percent_per_decade_hac_95_ci_lower"],
+        "without_co2_ci95_upper": residual["trend_percent_per_decade_hac_95_ci_upper"],
     }
 
 
