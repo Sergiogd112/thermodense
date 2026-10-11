@@ -2,8 +2,8 @@
 
 Is any density trend left once the CO₂ response from published controlled WACCM-X
 experiments (Brown et al., 2024) is removed from each series? This is a
-model-conditioned test of whether CO₂ is sufficient to explain the observed
-trends, not an attribution from the observations alone.
+model-conditioned compatibility test of the observed trends with CO₂ alone,
+not an attribution from the observations alone.
 
 ## Source
 
@@ -107,10 +107,12 @@ CO₂-only trends as context). Full table: `co2_only_expected_trends.csv`.
   not a stable residual.
 - **Claim** (protocol "fingerprint consistency"): given the WACCM-X CO₂ response
   of Brown et al. (2024), the observed density trends above about 275 km are
-  consistent with CO₂ alone, with no net residual trend detectable. CO₂ is
-  therefore a sufficient explanation there. That does not show other causes
-  are absent or small individually, and the intervals do not include
-  uncertainty in the CO₂ response.
+  consistent with CO₂ alone: no net residual trend is detected. That is
+  compatibility, not sufficiency or equivalence. The intervals still allow
+  sizeable net residuals (for example up to +3.27 %/decade for HASDM at
+  400 km), no equivalence margin was set, other causes are neither excluded
+  nor bounded individually, and the intervals omit uncertainty in the CO₂
+  response.
 
 ## Limits
 

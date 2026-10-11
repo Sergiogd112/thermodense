@@ -13,7 +13,7 @@ responses?**
 
 | Stream | Status | One-line answer |
 |---|---|---|
-| Prediction (Karman ± CO₂, cheap controls) | Closed | No CO₂ information beyond a smooth time coordinate |
+| Prediction (Karman ± CO₂, cheap controls) | Closed | No reliable CO₂ gain detected beyond a smooth time coordinate |
 | Observed trends | Done, one input pending | About −4 to −7 %/decade at 250–575 km, solar-adjusted |
 | Model physics (WACCM-X) | Partial | Historical total trend matches observations; CO₂-only share unknown |
 | Without CO₂ | First pass done | Removing the published WACCM-X CO₂ response leaves no detectable trend above ~275 km; a small decline remains at 200–250 km |
@@ -36,8 +36,9 @@ responses?**
   −0.025 [−0.159, +0.074] for boosting. Measured CO₂ against a smooth
   time-only placebo (B − P) is ≈ 0 for both. The pre-set rule stops any neural
   follow-up.
-- **Claim:** within these models and splits, CO₂ adds no predictive information
-  beyond calendar time. Karman's integer-year input already correlates 0.997
+- **Claim:** within these models and splits, no reliable incremental gain from
+  CO₂ was detected beyond calendar time; the intervals still allow small gains
+  (up to about +0.15 pp), so this is a null result, not demonstrated absence. Karman's integer-year input already correlates 0.997
   with the CO₂ trend. This says nothing for or against a physical CO₂ effect.
 
 ## 2. Observed density trends (solar-adjusted, calendar time)
@@ -85,11 +86,13 @@ Receipts: [download](waccm-x-regional-download-2026-10-10.md),
 - **Restart artifacts:** each run starts from year-2000 CO₂ rescaled to its start
   year. CO₂ tracer ages are negative at first and need about 6–8 years to
   settle; run 1 never fully does. At 40–70 km CO₂ jumps about 7–10 ppm at 1998.
-  Usable windows are 1982–1997 and 2006–2024.
+  Usable windows are 1982–1997 and 2006–2024 (for interval-matched tracer-age
+  estimates, 2006–mid-2021).
 - **Transport times** (tracer age): about 1.1 years to 20 km, about 3.0 years to
   40–60 km and about 4.1–4.2 years to 70 km; runs 2 and 3 agree.
-  - Above about 75 km, CO₂ is depleted, so its age cannot be read; reaching the
-    thermosphere plausibly takes about 4–5 years (reasoning, not measured).
+  - Above about 75 km, CO₂ is depleted, so its age cannot be read. No transit
+    time to the thermosphere is measured; the ~4-year age at 70 km is only a
+    lower bound on reaching that height.
   - A lagged tigramite (ParCorr/PCMCI+) analysis cannot time it. No lag
     survives a surrogate test, and an apparent ~5.7-year thermospheric lag is
     solar aliasing.
@@ -126,9 +129,9 @@ new residuals. WACCM-X uses its own prescribed CO₂.
   to +2.3 %/decade (2006–2024; none significant), which indicates window and
   model dependence.
 - **Claim:** given this model's CO₂ response, the observed trends above about
-  275 km are consistent with CO₂ alone. CO₂ is sufficient there, but the
-  intervals bound only the net residual: individual other causes are neither
-  excluded nor bounded. The interval omits uncertainty in the CO₂ response:
+  275 km are consistent with CO₂ alone (compatibility, not sufficiency). The
+  intervals bound only the net residual and still allow sizeable values;
+  individual other causes are neither excluded nor bounded. The interval omits uncertainty in the CO₂ response:
   a 30% error would shift the without-CO₂ trend by about ±1.5 %/decade at 400 km.
 
 ## 5. What is not established
