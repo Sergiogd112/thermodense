@@ -2,7 +2,7 @@
 # SGE array 1..74: full-column (1-700 km) extraction, one stored year per task.
 #$ -S /bin/bash
 set -euo pipefail
-cd /home/sergio/thermodense
+cd "${THERMODENSE_ROOT:-$SGE_O_WORKDIR}"  # submit with qsub from the repository root
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
-exec /home/sergio/.local/share/thermodense/venvs/waccmx/bin/python -I scripts/waccmx/extract_regional_daily.py --index "$SGE_TASK_ID" \
+exec "${WACCMX_PYTHON:-$HOME/.local/share/thermodense/venvs/waccmx/bin/python}" -I scripts/waccmx/extract_regional_daily.py --index "$SGE_TASK_ID" \
   --heights v2 --source data/original/waccm_x_regional --out data/derived/waccmx_regional_daily_v2

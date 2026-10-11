@@ -68,24 +68,47 @@ def growth(t, y, f107a):
             "pct_per_100_sfu": float(1e4 * b[2])}
 
 
-def block_ci(values, rng, boot=1000, block=24, stat=np.nanmean):
+def block_starts(t, values, block=24):
+    """Start positions of blocks of `block` consecutive months that are all finite.
+
+    Blocks never cross a missing month (the 2022 gap) or a NaN left by the
+    running mean, so every block is an uninterrupted 24-month stretch.
+    """
+    t = np.asarray(t, float)
+    ok = np.isfinite(values)
+    consecutive = np.r_[np.abs(np.diff(t) - 1 / 12) < 1e-6, False]  # month i+1 follows month i
+    starts = []
+    for s in range(len(values) - block + 1):
+        if ok[s:s + block].all() and consecutive[s:s + block - 1].all():
+            starts.append(s)
+    if not starts:
+        raise ValueError("no uninterrupted block of %d finite months" % block)
+    return np.array(starts)
+
+
+def block_ci(t, values, rng, boot=1000, block=24, stat=np.nanmean):
     """Moving-block bootstrap 95% interval of stat over a monthly series."""
-    n = len(values)
-    nb = max(1, n // block)
-    draws = [stat(np.concatenate([values[s:s + block] for s in rng.integers(0, max(1, n - block), nb)]))
+    starts = block_starts(t, values, block)
+    nb = max(1, np.isfinite(values).sum() // block)
+    draws = [stat(np.concatenate([values[s:s + block] for s in rng.choice(starts, nb)]))
              for _ in range(boot)]
     return list(map(float, np.nanpercentile(draws, [2.5, 97.5])))
 
 
 def trend_ci(t, y, rng, boot=1000, block=24):
     """Moving-block bootstrap 95% interval of the linear trend (years per decade)."""
-    n = len(y)
-    nb = max(1, n // block)
+    starts = block_starts(t, y, block)
+    nb = max(1, np.isfinite(y).sum() // block)
     draws = []
     for _ in range(boot):
-        idx = np.concatenate([np.arange(s, min(n, s + block)) for s in rng.integers(0, max(1, n - block), nb)])
+        idx = np.concatenate([np.arange(s, s + block) for s in rng.choice(starts, nb)])
         draws.append(slope_per_decade(t[idx], y[idx]))
     return list(map(float, np.nanpercentile(draws, [2.5, 97.5])))
+
+
+def tracer_age(t, c, T, S):
+    """Years since the deseasonalized surface series S(T) last had the value c(t); NaN if never."""
+    return t - np.interp(c, S, T, left=np.nan, right=np.nan)
 
 
 def slope_per_decade(t, y):
@@ -115,7 +138,7 @@ def series(directory):
         _, _, sr = monthly(dates[sel], d["drivers"][sel, 0])
         runs[label] = {"keys": keys, "t": t, "f107a": deseasonalize(keys, f), "surface": deseasonalize(keys, sr),
                        "co2": {h: Z[:, heights.index(h)] for h in GROWTH_HEIGHTS},
-                       "age": {h: t - np.interp(Z[:, heights.index(h)], S, T, left=np.nan, right=np.nan)
+                       "age": {h: tracer_age(t, Z[:, heights.index(h)], T, S)
                                for h in AGE_HEIGHTS},
                        "ratio": {h: Z[:, heights.index(h)] / s_now for h in RATIO_HEIGHTS}}
     return meta, (T, S), runs
@@ -128,7 +151,8 @@ def analyse(directory, out, skip_years=(6, 8, 10), boot=1000, seed=20261011):
               "surface": {"first_month_centre": float(surface[0][0]), "last_month_centre": float(surface[0][-1]),
                           "ppm": [float(surface[1][0] * 1e6), float(surface[1][-1] * 1e6)]},
               "deseasonalization": "centred 2x12-month running mean, never bridging missing months (2022)",
-              "uncertainty": "24-month moving-block bootstrap, 1000 draws; describes month-to-month variability "
+              "uncertainty": f"24-month moving-block bootstrap, {boot} draws, blocks never crossing missing "
+                             "months; describes month-to-month variability "
                              "of one free-running model realisation, not model or forcing uncertainty",
               "co2_growth_note": "descriptive point estimates without intervals; monthly residuals are "
                                  "autocorrelated and the solar adjustment is a single linear F10.7a term",
@@ -146,12 +170,12 @@ def analyse(directory, out, skip_years=(6, 8, 10), boot=1000, seed=20261011):
             w = {"from": float(t[use][0]), "to": float(t[use][-1]), "months": int(use.sum()), "age": {}, "ratio": {}}
             for h, a in r["age"].items():
                 v = a[use]
-                w["age"][str(h)] = {"mean_years": float(np.nanmean(v)), "ci95": block_ci(v, rng, boot),
+                w["age"][str(h)] = {"mean_years": float(np.nanmean(v)), "ci95": block_ci(t[use], v, rng, boot),
                                     "trend_years_per_decade": slope_per_decade(t[use], v),
                                     "trend_ci95": trend_ci(t[use], v, rng, boot)}
             for h, q in r["ratio"].items():
                 v = q[use]
-                w["ratio"][str(h)] = {"mean": float(np.nanmean(v)), "ci95": block_ci(v, rng, boot)}
+                w["ratio"][str(h)] = {"mean": float(np.nanmean(v)), "ci95": block_ci(t[use], v, rng, boot)}
             f = np.where(use, r["f107a"], np.nan)
             w["co2_growth"] = {"surface": growth(t, np.where(use, r["surface"], np.nan), f),
                                **{str(h): growth(t, np.where(use, c, np.nan), f) for h, c in r["co2"].items()}}

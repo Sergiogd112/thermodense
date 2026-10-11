@@ -1,6 +1,6 @@
 #!/bin/bash
 #$ -S /bin/bash
 set -euo pipefail
-cd /home/sergio/thermodense
+cd "${THERMODENSE_ROOT:-$SGE_O_WORKDIR}"  # submit with qsub from the repository root
 export OMP_NUM_THREADS=2 MPLBACKEND=Agg
-exec /home/sergio/.local/share/thermodense/venvs/waccmx/bin/python -I scripts/waccmx/co2_lag_analysis.py
+exec "${WACCMX_PYTHON:-$HOME/.local/share/thermodense/venvs/waccmx/bin/python}" -I scripts/waccmx/co2_lag_analysis.py
