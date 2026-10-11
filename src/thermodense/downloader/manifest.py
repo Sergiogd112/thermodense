@@ -35,10 +35,15 @@ class Manifest:
         }
 
     def save(self, path: Path) -> None:
-        """Save manifest to JSON file."""
+        """Save manifest to JSON file atomically (temporary file, then rename)."""
         ensure_dir(path.parent)
-        with open(path, "w") as f:
-            json.dump(self.to_dict(), f, indent=2)
+        partial = path.with_name(path.name + ".partial")
+        try:
+            with open(partial, "w") as f:
+                json.dump(self.to_dict(), f, indent=2)
+            partial.replace(path)
+        finally:
+            partial.unlink(missing_ok=True)
 
     @classmethod
     def load(cls, path: Path) -> Manifest | None:

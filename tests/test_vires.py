@@ -223,3 +223,23 @@ def test_interrupted_batch_keeps_completed_months_tracked_and_rerun_reconciles(
     entries = {e.path: e for e in Manifest.load(vires.MANIFEST_PATH).entries}
     jan_entry = entries[str(january.relative_to(vires.REF_ROOT))]
     assert jan_entry.status == "skipped" and "without a manifest entry" in jan_entry.error
+
+
+def test_manifest_save_is_atomic_when_writing_is_interrupted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from thermodense.downloader import manifest as manifest_module
+    from thermodense.downloader.manifest import Manifest
+
+    path = tmp_path / "manifest.json"
+    entry = ManifestEntry("a.csv.gz", "u", "downloaded", "t", size_bytes=1)
+    Manifest(dataset="vires", created_at="t", entries=[entry]).save(path)
+    before = path.read_text()
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(manifest_module.json, "dump", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        Manifest(dataset="vires", created_at="t2", entries=[entry, entry]).save(path)
+    assert path.read_text() == before  # the previous manifest is intact and loadable
+    assert Manifest.load(path) is not None
+    assert not list(tmp_path.glob("*.partial"))
