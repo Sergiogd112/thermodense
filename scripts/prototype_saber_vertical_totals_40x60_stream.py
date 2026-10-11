@@ -328,6 +328,15 @@ def validate_calendar_ns(time_ns: np.ndarray) -> np.ndarray:
     return values
 
 
+def load_baseline_calendar(path: Path) -> pd.DatetimeIndex:
+    """Calendar from a baseline Parquet ``timestamp`` column, validated like --calendar-npz."""
+
+    timestamps = pd.to_datetime(pd.read_parquet(path, columns=["timestamp"])["timestamp"])
+    if timestamps.dt.tz is not None:
+        timestamps = timestamps.dt.tz_convert("UTC").dt.tz_localize(None)
+    return pd.DatetimeIndex(validate_calendar_ns(timestamps.to_numpy(dtype="datetime64[ns]").astype(np.int64)))
+
+
 def with_legacy_path_defaults(
     saved: dict[str, object], current: dict[str, object]
 ) -> dict[str, object]:
@@ -700,8 +709,7 @@ def main() -> None:
                 (args.output_dir / name).unlink(missing_ok=True)
         started = time.monotonic()
         if args.calendar_npz is None:
-            baseline = pd.read_parquet(args.baseline_path)
-            calendar = pd.DatetimeIndex(pd.to_datetime(baseline["timestamp"]))
+            calendar = load_baseline_calendar(args.baseline_path)
             calendar_identity: dict[str, object] = {
                 "baseline_path": str(args.baseline_path)
             }

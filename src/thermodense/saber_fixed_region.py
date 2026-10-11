@@ -346,6 +346,11 @@ def _monthly(rows: list[dict[str, Any]], start: date, end: date) -> list[dict[st
     return result
 
 
+# A real orbit lasts ~97 min. In global validation, a scan claiming an orbit number
+# more than this far outside that orbit's observed time span is a reused identity.
+ORBIT_IDENTITY_TOLERANCE = timedelta(hours=6)
+
+
 def prepare_fixed_region(*, input_dir: Path, output_dir: Path, start: date, end: date,
                          validation_scope: str = "global", identity_audit_dir: Path | None = None,
                          expected_identity_audit_sha256: str | None = None) -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -378,6 +383,9 @@ def prepare_fixed_region(*, input_dir: Path, output_dir: Path, start: date, end:
     provenance_files = []
     seen: dict[tuple[int, int, datetime], dict[str, Any]] = {}
     physical_times: dict[tuple[int, int], dict[str, Any]] = {}
+    # Never pruned: compact per-orbit time spans keep distant identity reuse detectable
+    # after the two-day row window has dropped the earlier, nonregional scans.
+    orbit_spans: dict[int, tuple[datetime, datetime]] = {}
     duplicate_count = 0
     n_missing_geometry = 0
     n_outside_region = 0
@@ -408,6 +416,14 @@ def prepare_fixed_region(*, input_dir: Path, output_dir: Path, start: date, end:
                 raise ValueError(f"Ambiguous timestamp for physical scan {physical}")
             if prior is None or not prior["geo_selected"]:
                 physical_times[physical] = row
+            if audit is None:
+                stamp = row["timestamp_utc"]
+                span = orbit_spans.get(row["orbit"])
+                if span is not None and (stamp - span[0] > ORBIT_IDENTITY_TOLERANCE
+                                         or span[1] - stamp > ORBIT_IDENTITY_TOLERANCE):
+                    raise ValueError(f"Ambiguous timestamp for physical scan {physical}: "
+                                     f"orbit {row['orbit']} reappears outside its time span")
+                orbit_spans[row["orbit"]] = (min(span[0], stamp), max(span[1], stamp)) if span else (stamp, stamp)
             previous = seen.get(key)
             if previous is not None:
                 payload = ("reference_altitude_km", "latitude_119km", "longitude_119km_east", "_profile_geometry", "official_flux_w_m2", "slt_hours", "sza_deg", "co2cool_119km_w_m3", "full_profile_in_region", "qc_flags")

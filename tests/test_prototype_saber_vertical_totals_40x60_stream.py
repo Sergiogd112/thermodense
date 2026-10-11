@@ -33,3 +33,19 @@ def test_calendar_accepts_unique_three_hour_grid():
 def test_calendar_rejects_inputs_that_would_drop_scans(times, message):
     with pytest.raises(ValueError, match=message):
         stream.validate_calendar_ns(np.array(times, dtype="datetime64[ns]").astype(np.int64))
+
+
+def test_baseline_parquet_calendar_is_validated(tmp_path):
+    import pandas as pd
+
+    good = tmp_path / "good.parquet"
+    pd.DataFrame({"timestamp": pd.to_datetime(["2014-01-01 00:00", "2014-01-01 03:00"])}).to_parquet(good)
+    assert len(stream.load_baseline_calendar(good)) == 2
+    duplicate = tmp_path / "duplicate.parquet"
+    pd.DataFrame({"timestamp": pd.to_datetime(["2014-01-01 00:00", "2014-01-01 00:00"])}).to_parquet(duplicate)
+    with pytest.raises(ValueError, match="duplicate"):
+        stream.load_baseline_calendar(duplicate)
+    off_grid = tmp_path / "off_grid.parquet"
+    pd.DataFrame({"timestamp": pd.to_datetime(["2014-01-01 00:00", "2014-01-01 01:00"])}).to_parquet(off_grid)
+    with pytest.raises(ValueError, match="three-hour"):
+        stream.load_baseline_calendar(off_grid)

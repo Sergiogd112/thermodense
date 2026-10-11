@@ -487,3 +487,25 @@ def test_regional_cli_operator_anchor(tmp_path: Path, monkeypatch) -> None:
                                    "--identity-audit-dir", str(audit_dir), "--expected-identity-audit-sha256", digest])
     module.main()
     assert json.loads((tmp_path / "new/provenance.json").read_text())["fatal_validation_scope"] == "regional"
+
+
+def test_nonregional_identity_reused_days_later_fails_in_global_mode(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    make_file(raw, date(2024, 1, 1), scans=[{"orbit": 5, "event": 1, "lat": -60, "lon": 10, "time": 0}])
+    make_file(raw, date(2024, 1, 2), scans=[{"orbit": 6, "event": 1, "lat": -60, "lon": 10, "time": 0}])
+    make_file(raw, date(2024, 1, 3), scans=[{"orbit": 5, "event": 1, "time": 3_600_000}])
+    with pytest.raises(ValueError, match="timestamp"):
+        run(raw, date(2024, 1, 1), date(2024, 1, 3))
+    assert not (tmp_path / "new").exists()
+
+
+def test_same_orbit_within_its_pass_is_accepted(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    make_file(raw, date(2024, 1, 1), scans=[
+        {"orbit": 5, "event": 1, "time": 0},
+        {"orbit": 5, "event": 2, "time": 3_000_000},
+    ])
+    scans, _ = run(raw, date(2024, 1, 1), date(2024, 1, 1))
+    assert scans.height == 2
