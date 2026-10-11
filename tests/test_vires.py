@@ -177,3 +177,49 @@ def test_interrupted_compression_leaves_no_final_file(tmp_path: Path, monkeypatc
     assert not gz_path.exists()  # a later run must not skip this month
     assert not list(tmp_path.glob("*.partial"))
     assert csv_path.exists()  # the downloaded CSV is kept until compression succeeds
+
+
+def test_interrupted_batch_keeps_completed_months_tracked_and_rerun_reconciles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from thermodense.downloader.manifest import Manifest
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        vires,
+        "collection_info",
+        lambda _c: {"startDate": "2003-01-01T00:00:00Z", "stopDate": "2003-02-28T23:59:50Z"},
+    )
+
+    def fake_parallel(downloads, base_dir, **kwargs):
+        entries = []
+        for url, path in downloads:
+            _write_hapi_csv(path, PARAMETERS, ROWS)
+            entries.append(ManifestEntry(str(path.relative_to(base_dir)), url, "downloaded", "now"))
+        return entries, Counters(downloaded=len(entries))
+
+    real_compress = vires._compress
+    calls = {"n": 0}
+
+    def compress_then_interrupt(entry, path):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise KeyboardInterrupt
+        return real_compress(entry, path)
+
+    monkeypatch.setattr(vires, "download_parallel", fake_parallel)
+    monkeypatch.setattr(vires, "_compress", compress_then_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        vires.download_vires(["CH_OPER_DNS_ACC_2_"])
+
+    january = vires.month_path("CH_OPER_DNS_ACC_2_", date(2003, 1, 1))
+    tracked = {e.path for e in Manifest.load(vires.MANIFEST_PATH).entries}
+    assert january.exists() and str(january.relative_to(vires.REF_ROOT)) in tracked
+
+    # A rerun of an archive that is present but untracked records it instead of leaving it invisible.
+    vires.MANIFEST_PATH.unlink()
+    monkeypatch.setattr(vires, "_compress", real_compress)
+    vires.download_vires(["CH_OPER_DNS_ACC_2_"])
+    entries = {e.path: e for e in Manifest.load(vires.MANIFEST_PATH).entries}
+    jan_entry = entries[str(january.relative_to(vires.REF_ROOT))]
+    assert jan_entry.status == "skipped" and "without a manifest entry" in jan_entry.error

@@ -22,7 +22,7 @@ from urllib.parse import urlencode
 
 from .common import curl_text, download_parallel, get_base_dir
 from .counter import Counters
-from .manifest import ManifestEntry, create_or_update_manifest
+from .manifest import Manifest, ManifestEntry, create_or_update_manifest, now_iso
 
 HAPI_URL = "https://vires.services/hapi"
 REF_ROOT = get_base_dir() / "data" / "original"
@@ -135,7 +135,10 @@ def download_vires(
     """
     downloads: list[tuple[str, Path]] = []
     entries: list[ManifestEntry] = []
+    reconciled: list[ManifestEntry] = []
     skipped = 0
+    existing_manifest = Manifest.load(MANIFEST_PATH)
+    tracked = {e.path for e in existing_manifest.entries} if existing_manifest else set()
     for collection in collections or list(DEFAULT_COLLECTIONS):
         if collection not in VIRES_COLLECTIONS:
             raise ValueError(f"Unknown VirES collection: {collection}")
@@ -148,6 +151,12 @@ def download_vires(
             target = month_path(collection, month)
             if target.exists() and target.stat().st_size > 0 and not overwrite:
                 skipped += 1
+                relative = str(target.relative_to(REF_ROOT)) if target.is_relative_to(REF_ROOT) else str(target)
+                if relative not in tracked:  # e.g. left untracked by an interrupted batch
+                    reconciled.append(ManifestEntry(relative, month_url(collection, month), "skipped",
+                                                    now_iso(), size_bytes=target.stat().st_size,
+                                                    error="archive found without a manifest entry; "
+                                                          "original download time not recorded"))
                 continue
             # Download uncompressed (``download_parallel`` checks this path), then gzip.
             # A leftover .csv can only be a partial download, so never reuse it.
@@ -165,12 +174,19 @@ def download_vires(
             timeout_s=1800,
             desc=f"Downloading {len(downloads)} VirES months",
         )
-        entries = [
-            _compress(entry, path) if entry.status == "downloaded" else entry
-            for entry, (_url, path) in zip(entries, downloads)
-        ]
+        finished = [e for e in entries if e.status != "downloaded"] + reconciled
+        try:
+            # Persist after every month so an interruption keeps completed archives tracked.
+            for entry, (_url, path) in zip(entries, downloads):
+                if entry.status == "downloaded":
+                    finished.append(_compress(entry, path))
+                    create_or_update_manifest(dataset="vires", manifest_path=MANIFEST_PATH, entries=finished)
+        finally:
+            create_or_update_manifest(dataset="vires", manifest_path=MANIFEST_PATH, entries=finished)
+        entries = finished
     else:
         counters = Counters()
+        entries = reconciled
     counters.skipped_existing += skipped
 
     manifest = create_or_update_manifest(
