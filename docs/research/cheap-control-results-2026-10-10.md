@@ -4,7 +4,11 @@ Results for the [cheap-control design](cheap-control-study-design-2026-10-10.md)
 approved and run on 10 Oct. SGE jobs 1574 (prep), 1575 (32-task fit array) and
 1576 (report), all exit 0, from 15:50 to 16:21 CEST on `all.q@auriga`. Root:
 `karman-phoenix/cheap-controls-20261010/` (`tools/cheap_controls.py`,
-`outputs/report.json`). The test months had already been scored by the neural
+`outputs/report.json`). The code as run is committed byte-for-byte as
+`scripts/cheap_controls_full25.py` (SHA-256 `fd07f4b7…16e1dcc37`; last
+modified before the prep job started), with synthetic tests in
+`tests/test_cheap_controls_full25.py`. Its two input paths are the Phoenix
+locations used in the run; environment: `uv` project venv, scikit-learn 1.8.0. The test months had already been scored by the neural
 campaign, so this study is **exploratory**.
 
 ## Setup as run
@@ -67,10 +71,14 @@ comparator.
 
 - **The stopping rule is met.** D − C is within its interval of 0 for both
   models in the original period and over all months, and B − P is ≈ 0 for
-  both. In this setting, measured CO₂ adds no predictive information beyond a
-  smooth time coordinate. **No neural follow-up is proposed.**
+  both. In this setting, **no reliable incremental gain from measured CO₂ was
+  detected** beyond a smooth time coordinate. That is a null result, not a
+  demonstrated absence: across both models, the upper interval ends for D − C
+  and B − P range from +0.04 to +0.15 pp, and no equivalence margin was
+  predeclared. The predeclared stopping rule is met. **No neural follow-up is
+  proposed.** (Wording corrected 2026-10-11 after review.)
 - For ridge, CO₂ (B − A, +0.24) and the smooth placebo (P − A, +0.26) help by
-  the same amount. Plain decimal time adds nothing (P2 − A = 0), because a
+  the same amount. Plain decimal time adds no detectable skill (P2 − A ≈ 0), because a
   linear model already gets a linear trend from integer year. The 11-df spline
   helps most (C is the best ridge cell). Whatever CO₂ adds here is **trend
   curvature**, which a time-only fit reproduces.

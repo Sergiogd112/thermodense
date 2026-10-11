@@ -14,7 +14,7 @@ earlier advice.
 - [Operational status, 9 Oct](research/phoenix-status-and-cleanup-2026-10-09.md) — campaign completion and cluster cleanup.
 - [Through-2025 closeout, 10 Oct](research/full25-closeout-2026-10-10.md) — paired-month bootstrap by period, ratio rerun in a fresh root.
 - [Cheap-control study design, 10 Oct](research/cheap-control-study-design-2026-10-10.md) — 8-cell year/CO₂/placebo control design, approved and launched 10 Oct.
-- [Cheap-control results, 10 Oct](research/cheap-control-results-2026-10-10.md) — CO₂ adds nothing beyond smooth time (D−C and B−placebo ≈ 0); no neural follow-up.
+- [Cheap-control results, 10 Oct](research/cheap-control-results-2026-10-10.md) — no reliable CO₂ gain detected beyond smooth time (D−C and B−placebo ≈ 0); no neural follow-up.
 
 ### Karman prediction
 
