@@ -26,6 +26,12 @@ from scripts.recreate_brown_density_trend_current import F107_COL, SeriesSpec, f
 
 EARTH_RADIUS_KM = 6371.22  # CAM/WACCM-X rearth
 MIN_COVERAGE = 0.95
+# Days the provider never delivered (see the 10 Oct download receipt); any other
+# missing day means an incomplete extraction, not a model-top gap.
+DOCUMENTED_MISSING = (
+    {np.datetime64("2022-01-01") + i for i in range(365)}
+    | {np.datetime64("2023-01-31"), np.datetime64("2023-02-03")}
+)
 MODEL_CO2_COL = "model_co2vmr_ppm"
 RUN_WINDOWS = {
     "WACCM-X run 3 (2006-2024)": (19970101, "2006-01-01", "2024-12-31"),
@@ -59,6 +65,12 @@ def specs(directory: Path) -> list[tuple[SeriesSpec, float]]:
     out = []
     for dataset, (base, first, last) in RUN_WINDOWS.items():
         sel = (d["base_date"] == base) & (dates >= np.datetime64(first)) & (dates <= np.datetime64(last))
+        expected = set(np.arange(np.datetime64(first), np.datetime64(last) + 1)) - DOCUMENTED_MISSING
+        present = set(dates[sel])
+        if present != expected:
+            missing = sorted(expected - present)
+            raise ValueError(f"{dataset}: extraction is incomplete ({len(missing)} undocumented missing "
+                             f"days, first {missing[:3]}); re-run the extractor")
         # The model's own prescribed surface CO2 (global mean, mole fraction -> ppm), kept so
         # CO2-response comparisons use the forcing this run actually saw.
         columns = {"date": dates[sel], F107_COL: d["drivers"][sel, f107a],
