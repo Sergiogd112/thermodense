@@ -7,6 +7,7 @@ earlier advice.
 ## Current paper scope (October 2026)
 
 - [Results summary, 11 Oct](research/co2-paper-results-summary-2026-10-11.md) — where each evidence stream stands; start here.
+- [CO₂-only expectation, 11 Oct](research/co2-only-expectation-2026-10-11.md) — Brown et al. (2024) CO₂-only response vs observed trends: matches above ~300 km.
 - [CO₂–density paper protocol](co2-paper-protocol.md) — one-page scope, estimands and gates.
 - [Triangulation plan](research/co2-density-triangulation-plan-2026-10-05.md) — full research plan behind the protocol.
 - [Project review and scope reset](research/project-review-and-scope-reset-2026-10-05.md) — advisory review that led to the protocol.
