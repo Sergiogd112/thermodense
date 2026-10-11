@@ -37,3 +37,27 @@ def test_ln_ratio_clamps_f107_and_rejects_out_of_range_inputs():
         grid.ln_ratio(150.0, np.array([400.0]), np.array([100.0]))
     with pytest.raises(ValueError, match="historical range"):
         grid.ln_ratio(400.0, np.array([450.0]), np.array([100.0]))
+
+
+def test_model_series_driven_by_its_own_co2_leaves_no_residual():
+    from datetime import date, timedelta
+
+    import polars as pl
+
+    from scripts.co2_only_expected_trends import expected_rows
+    from scripts.recreate_brown_density_trend_current import F107_COL, SeriesSpec
+    from scripts.waccmx_density_trends import MODEL_CO2_COL
+
+    grid = synthetic_grid()
+    days = [date(2006, 1, 1) + timedelta(days=i) for i in range(365 * 15)]
+    t = np.arange(len(days)) / 365.25
+    co2 = 380 + 2.3 * t + 1.5 * np.sin(2 * np.pi * t)  # prescribed forcing with a season
+    f107 = 120 + 50 * np.sin(2 * np.pi * t / 11)
+    noise = np.random.default_rng(0).normal(0, 0.01, len(days))
+    density = grid.ln_ratio(400.0, co2, f107) / np.log(10.0) - 11.0 + noise
+    df = pl.DataFrame({"date": days, F107_COL: f107, MODEL_CO2_COL: co2, "rho": density})
+    row = expected_rows(SeriesSpec("WACCM-X run 3 (2006-2024)", 400.0, "date", "rho", df), grid)
+    assert row["co2_source"].startswith("model co2vmr")
+    assert row["without_co2_ci95_lower"] <= 0 <= row["without_co2_ci95_upper"]
+    assert abs(row["without_co2_pct_per_decade"]) < 0.3
+    assert row["observed_trend_pct_per_decade"] < -3

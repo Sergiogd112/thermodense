@@ -26,6 +26,7 @@ from scripts.recreate_brown_density_trend_current import F107_COL, SeriesSpec, f
 
 EARTH_RADIUS_KM = 6371.22  # CAM/WACCM-X rearth
 MIN_COVERAGE = 0.95
+MODEL_CO2_COL = "model_co2vmr_ppm"
 RUN_WINDOWS = {
     "WACCM-X run 3 (2006-2024)": (19970101, "2006-01-01", "2024-12-31"),
     "WACCM-X run 2 (1982-1997)": (19730101, "1982-01-01", "1997-12-31"),
@@ -53,11 +54,15 @@ def specs(directory: Path) -> list[tuple[SeriesSpec, float]]:
     heights = meta["heights_km_geopotential"]
     den = meta["height_vars"].index("DEN")
     f107a = meta["drivers"].index("f107a")
+    co2vmr = meta["drivers"].index("co2vmr")
     dates = d["dates"].astype("datetime64[D]")
     out = []
     for dataset, (base, first, last) in RUN_WINDOWS.items():
         sel = (d["base_date"] == base) & (dates >= np.datetime64(first)) & (dates <= np.datetime64(last))
-        columns = {"date": dates[sel], F107_COL: d["drivers"][sel, f107a]}
+        # The model's own prescribed surface CO2 (global mean, mole fraction -> ppm), kept so
+        # CO2-response comparisons use the forcing this run actually saw.
+        columns = {"date": dates[sel], F107_COL: d["drivers"][sel, f107a],
+                   MODEL_CO2_COL: d["drivers"][sel, co2vmr] * 1e6}
         for h in heights:
             k = meta["heights_km_geopotential"].index(h)
             with np.errstate(divide="ignore", invalid="ignore"):

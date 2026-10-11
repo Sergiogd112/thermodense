@@ -324,3 +324,38 @@ def test_extra_trend_csv_adds_waccmx_with_caption_and_provenance(
     with pytest.raises(FileNotFoundError):
         figure6.compose_figure(brown_csv_path(), trend_csv, tmp_path,
                                extra_trend_csvs=(tmp_path / "missing.csv",))
+
+
+def test_overlay_limits_keep_every_brown_point_and_error_bar():
+    near_zero = pl.DataFrame(
+        {
+            "dataset": ["NRLMSIS 2.1 Mauna Loa baseline"],
+            "altitude_km": [400.0],
+            "trend_percent_per_decade": [-0.2],
+            "trend_percent_per_decade_hac_95_ci_lower": [-0.4],
+            "trend_percent_per_decade_hac_95_ci_upper": [0.0],
+            "duration_bin_years": [55],
+        }
+    )
+    brown = figure6.load_brown_literature(brown_csv_path())
+    fig = plt.figure(figsize=(10, 7.5), layout="constrained")
+    ax = figure6.compose_overlay(fig, brown, near_zero)
+    low, high = figure6.brown_x_extent(brown)
+    assert ax.get_xlim()[0] <= low and ax.get_xlim()[1] >= high
+    plt.close(fig)
+
+
+def test_overlay_disclosure_describes_one_shared_axis(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+):
+    trend_csv = tmp_path / "trends.csv"
+    paired_jb_trend_data().write_csv(trend_csv)
+    monkeypatch.setattr(
+        "matplotlib.figure.Figure.savefig",
+        lambda _fig, path, **_kwargs: Path(path).touch(),
+    )
+    provenance = figure6.compose_figure(
+        brown_csv_path(), trend_csv, tmp_path, ["test"], require_jb=True, layout="overlay"
+    )
+    assert "Panel" not in provenance["disclosure"]
+    assert "same axis" in provenance["disclosure"] and "CC BY 4.0" in provenance["disclosure"]

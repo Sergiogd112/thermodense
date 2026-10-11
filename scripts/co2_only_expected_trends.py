@@ -17,9 +17,12 @@ containing zero means no trend is left once this model's CO2 response is removed
 It assumes additivity in log density and ignores uncertainty in the CO2 response.
 
 Assumptions, stated in the outputs:
-- surface CO2: NOAA Mauna Loa deseasonalized monthly means, shifted to the NOAA
-  global mean by their mean 1979-2026 difference, interpolated to days and
-  extrapolated linearly past the last month;
+- surface CO2: for observational series, NOAA Mauna Loa deseasonalized monthly
+  means shifted to the NOAA global mean by their mean 1979-2026 difference,
+  interpolated to days and extrapolated linearly past the last month; for
+  WACCM-X series, the run's own prescribed daily ``co2vmr``, so the model is
+  compared with the CO2 history it actually saw (no smoothing, which would
+  blend 2021 and 2023 across the missing 2022);
 - ln R is taken as linear in CO2 (a constant %/ppm, Brown et al.'s own Table 3
   convention), with the slope fitted by least squares over the grid's first
   four CO2 levels (369-431 ppm, spanning the historical record); the first
@@ -132,12 +135,15 @@ def expected_rows(
     observed = fit_trend(spec)
     if observed is None or not grid.alt[0] <= spec.altitude_km <= grid.alt[-1]:
         return None
+    from scripts.waccmx_density_trends import MODEL_CO2_COL
+
+    extra = [MODEL_CO2_COL] if MODEL_CO2_COL in spec.df.columns else []
     df = (
-        spec.df.select(spec.date_col, spec.value_col, spec.f107_col)
-        .drop_nulls()
+        spec.df.select(spec.date_col, spec.value_col, spec.f107_col, *extra)
+        .drop_nulls(subset=[spec.date_col, spec.value_col, spec.f107_col])
         .filter(pl.col(spec.value_col).is_finite() & (pl.col(spec.value_col) > -100.0))
     )
-    co2, _ = surface_co2(df[spec.date_col].to_numpy())
+    co2 = df[MODEL_CO2_COL].to_numpy() if extra else surface_co2(df[spec.date_col].to_numpy())[0]
     f107 = df[spec.f107_col].to_numpy().astype(float)
     def co2_only(g: ScalingGrid) -> dict[str, object]:
         synthetic = g.ln_ratio(spec.altitude_km, co2, f107) / np.log(10.0)
@@ -163,6 +169,7 @@ def expected_rows(
         "start_date": observed["start_date"],
         "end_date": observed["end_date"],
         "samples": observed["samples"],
+        "co2_source": "model co2vmr (daily, as prescribed)" if extra else "NOAA MLO deseasonalized, global offset",
         "co2_ppm_start": float(co2[0]),
         "co2_ppm_end": float(co2[-1]),
         "f107_mean": observed["f107_mean"],
@@ -172,9 +179,9 @@ def expected_rows(
         "co2_only_expected_pct_per_decade": exp,
         "co2_only_expected_3pt_slope_pct_per_decade": alternative,
         "co2_only_share_of_observed": exp / obs if obs else float("nan"),
-        "without_co2_pct_per_decade": residual["trend_percent_per_decade"],
-        "without_co2_ci95_lower": residual["trend_percent_per_decade_hac_95_ci_lower"],
-        "without_co2_ci95_upper": residual["trend_percent_per_decade_hac_95_ci_upper"],
+        "without_co2_pct_per_decade": residual["trend_percent_per_decade"] if residual else float("nan"),
+        "without_co2_ci95_lower": residual["trend_percent_per_decade_hac_95_ci_lower"] if residual else float("nan"),
+        "without_co2_ci95_upper": residual["trend_percent_per_decade_hac_95_ci_upper"] if residual else float("nan"),
     }
 
 

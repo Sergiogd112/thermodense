@@ -444,6 +444,16 @@ def compose_panels(
     return ax_a, ax_b
 
 
+def brown_x_extent(data: pl.DataFrame) -> tuple[float, float]:
+    """Smallest and largest plotted Brown trend, including uncertainty-bar ends."""
+
+    included = data.filter(pl.col("include_in_plot"))
+    x = included.get_column("density_trend_pct_per_decade").to_numpy().astype(float)
+    minus = included.get_column("uncertainty_minus_pct_per_decade").fill_null(0.0).to_numpy()
+    plus = included.get_column("uncertainty_plus_pct_per_decade").fill_null(0.0).to_numpy()
+    return float(np.min(x - minus)), float(np.max(x + plus))
+
+
 def compose_overlay(fig: object, brown_data: pl.DataFrame, trends: pl.DataFrame) -> object:
     """Draw the Brown synthesis in light gray behind the current trends on one axis."""
 
@@ -452,6 +462,10 @@ def compose_overlay(fig: object, brown_data: pl.DataFrame, trends: pl.DataFrame)
     dataset_handles, duration_handles = plot_trends(
         ax, trends, altitude_limits=SHARED_ALTITUDE_LIMITS
     )
+    left, right = ax.get_xlim()
+    brown_left, brown_right = brown_x_extent(brown_data)
+    pad = 0.04 * (max(right, brown_right) - min(left, brown_left))
+    ax.set_xlim(min(left, brown_left - pad), max(right, brown_right + pad))
     ax.set_xlabel("Density trend (%/decade)")
     ax.set_title(
         "Updated solar-adjusted density trends over the Brown et al. (2024) synthesis (gray)",
@@ -568,7 +582,20 @@ def compose_figure(
         "estimator": "OLS log10 density with time, centered 81-day F10.7, and squared F10.7; 27-day Bartlett Newey-West/HAC 95% intervals.",
         "outputs": [str(path) for path in output_paths],
         "disclosure": (
-            "Panel A is generated from digitized third-party figure geometry under "
+            (
+                "Light-gray curves and points are generated from digitized third-party figure "
+                "geometry (Brown et al. 2024) under CC BY 4.0; colored series on the same axis are "
+                "generated from project data"
+                + (" and WACCM-X model output" if waccmx_included else "")
+                + (
+                    ". JB inputs are externally generated provider-model outputs and are "
+                    "included as a canonical pair."
+                    if jb_included
+                    else ". This draft omits pending paired JB provider-model outputs."
+                )
+            )
+            if layout == "overlay"
+            else "Panel A is generated from digitized third-party figure geometry under "
             "CC BY 4.0; Panel B is generated from project data. JB inputs are externally "
             "generated provider-model outputs and are included as a canonical pair."
             if jb_included
