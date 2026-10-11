@@ -28,9 +28,12 @@ For every series and altitude in the Figure 6 trend set (global mean, HASDM;
 `current_density_trends_by_dataset_altitude.csv`) and the WACCM-X settled windows:
 
 1. **CO₂-only signal.** On exactly the days used in that series' fit, compute
-   `log10 R(CO₂(t), F10.7₈₁(t), z)`. CO₂ is NOAA Mauna Loa deseasonalized monthly
-   data shifted to the NOAA global mean (offset 0.94 ppm) and interpolated to
-   days. ln R is linear in CO₂ (constant %/ppm, Brown et al.'s Table 3
+   `log10 R(CO₂(t), F10.7₈₁(t), z)`. For observational series, CO₂ is NOAA
+   Mauna Loa deseasonalized monthly data shifted to the NOAA global mean (offset
+   0.94 ppm) and interpolated to days. For WACCM-X, it is the run's own
+   prescribed daily `co2vmr`, so the model is compared with the CO₂ history it
+   actually saw (changed after review; the NOAA proxy grows faster than the
+   model forcing in 2006–2024 and biased the earlier WACCM-X rows). ln R is linear in CO₂ (constant %/ppm, Brown et al.'s Table 3
    convention), with the slope fitted per altitude and F10.7 over the grid's
    first four CO₂ levels (369–431 ppm, covering the historical record).
    - Piecewise interpolation was rejected: at 200–300 km and 70 sfu, single
@@ -39,9 +42,14 @@ For every series and altitude in the Figure 6 trend set (global mean, HASDM;
    - F10.7 is clamped to 70–200 sfu; altitudes outside 200–1000 km are skipped.
 2. **Without CO₂.** Subtract that signal from the series day by day and refit
    with the same solar-adjusted estimator (time + F10.7₈₁ + F10.7₈₁², 27-day HAC).
-   The resulting trend keeps the observed 95% interval, so an interval
-   containing zero means no trend remains once this model's CO₂ response is
-   removed. This assumes additivity in log density.
+   The interval is **recomputed** from the refitted residuals rather than
+   copied from the observed fit. The CO₂ response varies with time and F10.7,
+   so it need not lie in the regression's design space, and the residual
+   covariance can change. Here the widths stay within 0–7% of the observed
+   ones (for example 2.16 against 2.11 %/decade at 400 km in the global mean).
+   An interval containing zero means no net trend is detected once this
+   model's CO₂ response is removed. This assumes additivity in log density and
+   treats the response as exact.
 3. **For context**, the CO₂-only signal alone is fitted the same way; it is the
    trend CO₂ would produce by itself.
 
@@ -60,10 +68,10 @@ For every series and altitude in the Figure 6 trend set (global mean, HASDM;
 | | 400 km | −5.75 | −6.17 | +0.45 [−2.29, +3.27] |
 | | 575 km | −6.78 | −6.92 | +0.16 [−3.26, +3.70] |
 | | 800 km | −6.35 | −7.60 | +1.35 [−2.26, +5.09] |
-| WACCM-X v2.1 regional, 2006–2024 | 206 km | −3.90 | −3.69 | −0.21 [−1.82, +1.42] |
-| | 398 km | −5.94 | −8.33 | +2.61 [−1.03, +6.38] |
-| WACCM-X v2.1 regional, 1982–1997 | 206 km | −4.26 | −2.23 | **−2.07 [−3.99, −0.11]** |
-| | 398 km | −6.60 | −4.89 | −1.80 [−6.17, +2.77] |
+| WACCM-X v2.1 regional, 2006–2024 (model CO₂) | 206 km | −3.90 | −3.21 | −0.72 [−2.33, +0.92] |
+| | 398 km | −5.94 | −7.26 | +1.43 [−2.20, +5.19] |
+| WACCM-X v2.1 regional, 1982–1997 (model CO₂) | 206 km | −4.27 | −2.24 | **−2.07 [−4.00, −0.10]** |
+| | 398 km | −6.61 | −4.91 | −1.79 [−6.18, +2.80] |
 
 Figure: `outputs/figures/results/co2_only_expected_trends/co2_only_expected_trends.png`
 (local; the without-CO₂ trend and its interval against zero, with the observed and
@@ -77,26 +85,32 @@ CO₂-only trends as context). Full table: `co2_only_expected_trends.csv`.
     +0.47 %/decade, and every interval contains zero.
   - HASDM, 225–825 km: the same holds, with wider intervals (±1.5 to ±3.7).
 
-  Against observed declines of −4 to −7 %/decade, this means that, given this
-  model's CO₂ response, other contributions at these heights are at most about
-  ±1.5 %/decade in 1967–2019.
+  Against observed declines of −4 to −7 %/decade, this means no net residual
+  trend is statistically detected at these heights once this model's CO₂
+  response is removed. The intervals bound the **net** residual, the sum of
+  all other influences plus any error in the modelled CO₂ response. They do
+  not bound individual other causes, which could be larger and partly cancel.
 - **At the lowest levels a significant decline remains:** −0.89 [−1.55, −0.22]
   at 250 km in the global mean and −1.70 [−2.99, −0.39] at 200 km in HASDM. The
   model's CO₂ response weakens sharply below 300 km while the observed trends do
   not. Candidates include other forcings (ozone, other greenhouse gases,
   geomagnetic or lower-atmosphere changes), the products' low-altitude behaviour,
   or a too-weak modelled CO₂ response. These data cannot separate them.
-- **WACCM-X's own historical run** leaves residuals of opposite sign in its two
-  windows: about −2 in 1982–1997 (significant at 206 km) and up to +2.6 in
-  2006–2024 (not significant). The windows differ in CO₂ growth, solar activity
-  and model version, and the runs are regional and not held at Kp = 0. This
-  indicates window and model dependence, not a stable residual.
+- **WACCM-X's own historical run**, compared with its own prescribed CO₂:
+  - 1982–1997: residuals of about −2 %/decade at every height, significant
+    only at 206 km;
+  - 2006–2024: residuals of −0.7 to +2.3, none significant.
+
+  The windows differ in CO₂ growth and solar activity, the model version
+  (v2.1) differs from the CO₂-response grid (v1.2.2), and the runs are
+  regional and not held at Kp = 0. This indicates window and model dependence,
+  not a stable residual.
 - **Claim** (protocol "fingerprint consistency"): given the WACCM-X CO₂ response
   of Brown et al. (2024), the observed density trends above about 275 km are
-  consistent with CO₂ alone, with no residual trend detectable. CO₂ is
+  consistent with CO₂ alone, with no net residual trend detectable. CO₂ is
   therefore a sufficient explanation there. That does not show other causes
-  are absent, and the interval does not include uncertainty in the CO₂
-  response.
+  are absent or small individually, and the intervals do not include
+  uncertainty in the CO₂ response.
 
 ## Limits
 

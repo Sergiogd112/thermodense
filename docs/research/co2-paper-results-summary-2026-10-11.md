@@ -42,8 +42,14 @@ responses?**
 
 ## 2. Observed density trends (solar-adjusted, calendar time)
 
-Estimator: OLS `log10 ρ ~ time + F10.7₈₁ + F10.7₈₁²`, 27-day HAC 95% intervals.
-Values at 400 km (WACCM-X at 398.5 km geometric; TU Delft at 450 km):
+Estimator: OLS `log10 ρ ~ time + F10.7₈₁ + F10.7₈₁²`, 27-day HAC 95% intervals,
+from `scripts/recreate_brown_density_trend_current.py`. Observed and baseline
+rows come from `outputs/figures/results/current_density_trends/current_density_trends_by_dataset_altitude.csv`
+(19 Aug 2026 run; SHA-256 `71111bb2…5b35f65`, local because its inputs are
+partly access-conditional). WACCM-X rows come from `scripts/waccmx_density_trends.py`
+(PR #68), which writes `data/derived/waccmx_density_trends_v1/waccmx_density_trends.csv`.
+TU Delft's single 450 km estimate is the pooled mission-offset fit in the same
+19 Aug table. Values at 400 km (WACCM-X at 398.5 km geometric; TU Delft at 450 km):
 
 | Dataset | Period | %/decade [95%] | 250–575 km range |
 |---|---|---|---|
@@ -105,21 +111,24 @@ Receipts: [download](waccm-x-regional-download-2026-10-10.md),
 [Receipt](co2-only-expectation-2026-10-11.md). The Brown et al. (2024) WACCM-X
 v1.2.2 `CO2_only` response (fixed CO₂ and F10.7, Kp = 0, CC BY 4.0) was removed
 from each series day by day, on its own days, CO₂ and F10.7. The series was then
-refitted with the same estimator, which keeps the observed 95% interval.
+refitted with the same estimator, which recomputes the 95% interval from the
+new residuals. WACCM-X uses its own prescribed CO₂.
 
-- **Above about 275 km, no trend remains.**
+- **Above about 275 km, no net trend remains.**
   - Global mean, 275–575 km: without-CO₂ trends of −0.56 to +0.47 %/decade, all
     intervals containing zero. At 400 km: observed −4.94, without CO₂ +0.47
     [−0.60, +1.55].
   - HASDM, 225–825 km: the same, with wider intervals.
 - **At the lowest levels a significant decline remains:** −0.89 [−1.55, −0.22]
   at 250 km (global mean) and −1.70 [−2.99, −0.39] at 200 km (HASDM).
-- WACCM-X v2.1's own historical windows leave residuals of opposite sign
-  (about −2 in 1982–1997, up to +2.6 in 2006–2024), which indicates window and
+- WACCM-X v2.1's own historical windows, compared with their own prescribed CO₂,
+  leave residuals of about −2 (1982–1997; significant only at 206 km) and −0.7
+  to +2.3 %/decade (2006–2024; none significant), which indicates window and
   model dependence.
 - **Claim:** given this model's CO₂ response, the observed trends above about
-  275 km are consistent with CO₂ alone. CO₂ is sufficient there, but other
-  causes are not excluded. The interval omits uncertainty in the CO₂ response:
+  275 km are consistent with CO₂ alone. CO₂ is sufficient there, but the
+  intervals bound only the net residual: individual other causes are neither
+  excluded nor bounded. The interval omits uncertainty in the CO₂ response:
   a 30% error would shift the without-CO₂ trend by about ±1.5 %/decade at 400 km.
 
 ## 5. What is not established
