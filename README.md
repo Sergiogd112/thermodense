@@ -24,6 +24,22 @@ The selected first-paper work is a concise, figures-first set of six candidates
 (Figure 6) is the organizing result. See
 [`docs/first-paper-figure-plan.md`](docs/first-paper-figure-plan.md).
 
+The current bounded paper-scope draft is the
+[one-page CO₂ paper protocol](docs/co2-paper-protocol.md). Its linked Karman
+closeout and data-qualification report distinguish completed results from
+unresolved uncertainty/sampling gates. This draft does not silently supersede
+registered roadmap decisions or authorize new runs. The manuscript/Overleaf
+project remains in a separate repository.
+The [6 October execution receipt](docs/research/co2-paper-execution-2026-10-06.md)
+records the qualified pilot, actual source-data stop and independent inference gates.
+The [SABER provider query](docs/research/saber-clock-provider-clarification-2026-10-06.md)
+records the official-source check and an unsent clarification draft.
+The [internal regional-impact audit](docs/research/saber-internal-regional-impact-audit-2026-10-06.md)
+shows that the observed duplicate-clock anomalies are outside the fixed region;
+the user subsequently approved region-scoped validation. The
+[regional extraction closeout](docs/research/saber-regional-extraction-completion-2026-10-06.md)
+records the completed descriptive output and remaining sampling gates.
+
 ## Install and inspect
 
 ```console
