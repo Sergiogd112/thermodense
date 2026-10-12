@@ -138,7 +138,7 @@ new residuals. WACCM-X uses its own prescribed CO₂.
 **Update 2026-10-12 ([bracketing](co2-response-bracketing-2026-10-12.md)).**
 - **Strongest response.** Brown et al. (2024) is the strongest CO₂ response in
   their own compilation. The other published CO₂-only model responses are
-  0.31–0.92 times as strong at 400 km; the multi-forcing runs fall at 0.62–0.69.
+  0.31–0.92 times as strong at 400 km; the multi-forcing runs fall at 0.64–0.71.
 - **Compatibility is conditional.** With any response weaker than about
   0.72 times, a significant decline remains at 400 km in the global mean as
   well. The compatibility claim holds only for the strongest modelled CO₂
@@ -157,8 +157,9 @@ new residuals. WACCM-X uses its own prescribed CO₂.
 - **Uncertainty in the CO₂ response.** Section 4 rests on one model's published
   grid, and its intervals cover observational noise only. Run-level controlled output (requested from the
   authors) or several models' CO₂ responses are needed to bound it.
-- What drives the residual decline at 200–250 km: the altitude shape differs
-  from the model's, which no rescaling fixes (see the 12 Oct bracketing).
+- What drives the residual decline at 200–250 km. In the global mean the
+  altitude shape differs from the model's, which no rescaling fixes; HASDM does
+  not exclude a common scaling (see the 12 Oct bracketing).
 - Why the empirical-model baselines trend at all (MSIS near −1.4, JB2008 near
   −10 %/decade at 400 km): driver drift, sampling or construction.
 

@@ -75,8 +75,14 @@ def saber_scans() -> pl.DataFrame:
 
 
 def waccmx_proxy() -> pl.DataFrame:
+    from scripts.waccmx_density_trends import DOCUMENTED_MISSING
+
     meta, d = load(WACCMX_DAILY)
     sel = d["base_date"] == RUN3_BASE
+    days = d["dates"][sel].astype("datetime64[D]")
+    expected = set(np.arange(np.datetime64("2006-01-01"), np.datetime64("2024-12-31") + 1)) - DOCUMENTED_MISSING
+    if missing := expected - set(days):
+        raise ValueError(f"run 3 extraction misses {len(missing)} undocumented days, first {sorted(missing)[:3]}")
     fh = d["fixed_heights"][sel][..., REGION_COLUMN].astype(float)  # (day, var, height)
     var = {name: i for i, name in enumerate(meta["height_vars"])}
     idx = [meta["heights_km_geopotential"].index(h) for h in LAYER_KM]

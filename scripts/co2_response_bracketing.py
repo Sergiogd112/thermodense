@@ -73,6 +73,18 @@ PUBLISHED = [
 ]
 CELESTRAK_START = 1958  # first full year of the CelesTrak F10.7 record (starts 1957-10-01)
 
+# Documented endpoint definitions: (CO2 start, CO2 end in ppm, ln density ratio end/start).
+# Solomon (2015): prescribed 363 and 386 ppm, 12-year endpoint change scaled by 10/12 to
+# a linear %/decade. Solomon (2018, 2019): Table 1, 330 and 375 ppm, global-mean density
+# at 400 km of 0.584 -> 0.518 and 7.23 -> 6.87 ng/m3. Other entries are per-decade values
+# from regressions whose estimator is not reproduced here, so their k is approximate.
+ENDPOINTS = {
+    **{study: (363.0, 386.0, float(np.log1p(trend / 100 * 1.2)))
+       for study, _, _, _, _, trend, _ in PUBLISHED if study.startswith("Solomon et al. (2015)")},
+    "Solomon et al. (2018), 70 sfu": (330.0, 375.0, float(np.log(0.518 / 0.584))),
+    "Solomon et al. (2019), 200 sfu": (330.0, 375.0, float(np.log(6.87 / 7.23))),
+}
+
 
 SHAPE_PAIRS = [("Global mean thermospheric density", 250.0), ("Mauna Loa HASDM subset", 200.0),
                ("Mauna Loa HASDM subset", 250.0)]
@@ -118,8 +130,11 @@ def brown_equivalent(grid: ScalingGrid, f107: float | None, start: int, end: int
     else:
         sw = load_space_weather().filter((pl.col("date") >= first) & (pl.col("date") <= last)).drop_nulls()
         co2, source = surface_co2(sw["date"].to_numpy())[0], "observed F10.7_81, MLO CO2"
-    if sw["date"].min().year != start or sw["date"].max().year != end:
-        raise ValueError(f"drivers cover {sw['date'].min()}-{sw['date'].max()}, not {start}-{end}")
+    expected = set(np.arange(np.datetime64(f"{max(start, 1950)}-01-02" if start <= 1950 else f"{start}-01-01"),
+                             np.datetime64(f"{end}-12-31") + 1))  # WACCM-X output starts 1950-01-02
+    missing = expected - set(sw["date"].to_numpy().astype("datetime64[D]"))
+    if missing:
+        raise ValueError(f"drivers miss {len(missing)} days in {start}-{end}, first {sorted(missing)[:3]}")
     synthetic = grid.ln_ratio(400.0, co2, sw[F107_COL].to_numpy().astype(float)) / LN10
     fit = fit_trend(SeriesSpec("brown-equivalent", 400.0, "date", "s", sw.with_columns(pl.Series("s", synthetic))))
     return {"equivalent": float(fit["trend_percent_per_decade"]), "drivers": source,
@@ -127,26 +142,40 @@ def brown_equivalent(grid: ScalingGrid, f107: float | None, start: int, end: int
 
 
 def published_scalings(grid: ScalingGrid) -> pl.DataFrame:
-    """k = published log-slope / Brown-equivalent log-slope.
+    """k = published ln-density change / Brown's ln-density change under the same conditions.
 
-    Studies differ in whether "%/decade" is compounded or a linear change between
-    epochs. The primary k reads it as compounded per decade; ``k_linear_reading``
-    reads it as a linear change accumulated over the study period, and the two
-    bracket the conversion ambiguity.
+    Where a study documents its endpoints (``ENDPOINTS``), k is exact: the published
+    end/start density ratio over Brown's response to the same CO2 change at the same
+    F10.7. Otherwise k compares per-decade log-slopes: the published %/decade read as
+    compounded (``k_relative_to_brown2024``) or as a linear change accumulated over
+    the period (``k_linear_reading``), against Brown's grid with NOAA CO2 growth or,
+    for all-activity values, Brown's grid fitted with the solar-adjusted estimator.
+    That estimator differs from the studies' own (e.g. Qian's ratio regression), so
+    these k values are approximate normalisations.
     """
     rows = []
     for study, model, f107, start, end, trend, forcing in PUBLISHED:
-        eq = brown_equivalent(grid, f107, start, end)
-        ln_eq = np.log1p(eq["equivalent"] / 100)
-        decades = (end - start) / 10
-        k_linear = np.log1p(trend / 100 * decades) / decades / ln_eq
-        rows.append({"study": study, "model": model, "forcing": forcing, "f107": f107, "period": f"{start}-{end}",
-                     "published_400km_pct_per_decade": trend, "co2_only": forcing == "CO2",
-                     "brown2024_equivalent_pct_per_decade": eq["equivalent"], "equivalent_drivers": eq["drivers"],
-                     "equivalent_fit_start": eq["fit_start"], "equivalent_fit_end": eq["fit_end"],
-                     "equivalent_fit_samples": eq["fit_samples"],
-                     "k_relative_to_brown2024": float(np.log1p(trend / 100) / ln_eq),
-                     "k_linear_reading": float(k_linear)})
+        row = {"study": study, "model": model, "forcing": forcing, "f107": f107, "period": f"{start}-{end}",
+               "published_400km_pct_per_decade": trend, "co2_only": forcing == "CO2"}
+        if study in ENDPOINTS:
+            co2_a, co2_b, ln_pub = ENDPOINTS[study]
+            ln_brown = grid.ln_ratio(400.0, np.array([co2_a, co2_b]), np.full(2, f107))
+            k = ln_pub / float(ln_brown[1] - ln_brown[0])
+            row |= {"conversion": f"exact endpoints, CO2 {co2_a:g}-{co2_b:g} ppm",
+                    "brown2024_equivalent_pct_per_decade": float("nan"), "equivalent_drivers": "same endpoints",
+                    "equivalent_fit_start": "", "equivalent_fit_end": "", "equivalent_fit_samples": 0,
+                    "k_relative_to_brown2024": k, "k_linear_reading": k}
+        else:
+            eq = brown_equivalent(grid, f107, start, end)
+            ln_eq = np.log1p(eq["equivalent"] / 100)
+            decades = (end - start) / 10
+            row |= {"conversion": "approximate per-decade log-slope",
+                    "brown2024_equivalent_pct_per_decade": eq["equivalent"], "equivalent_drivers": eq["drivers"],
+                    "equivalent_fit_start": eq["fit_start"], "equivalent_fit_end": eq["fit_end"],
+                    "equivalent_fit_samples": eq["fit_samples"],
+                    "k_relative_to_brown2024": float(np.log1p(trend / 100) / ln_eq),
+                    "k_linear_reading": float(np.log1p(trend / 100 * decades) / decades / ln_eq)}
+        rows.append(row)
     return pl.DataFrame(rows)
 
 
