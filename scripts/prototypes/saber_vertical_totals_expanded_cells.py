@@ -1,7 +1,7 @@
 """THROWAWAY: coverage feasibility of native SABER vertical totals in expanded cells.
 
 Run from the repository root:
-    uv run python scripts/prototype_saber_vertical_totals_expanded_cells.py
+    uv run python scripts/prototypes/saber_vertical_totals_expanded_cells.py
 
 This reads only existing local SABER files.  It neither downloads data nor changes
 the production decoder, data, bundle, or PCMCI inputs.

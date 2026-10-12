@@ -383,7 +383,7 @@ def reusable(directory: Path, identity: str) -> bool:
             and record["result_files"]
             == {arrays.name: sha256(arrays), rows.name: sha256(rows)}
         )
-    except OSError, ValueError, KeyError, TypeError:
+    except (OSError, ValueError, KeyError, TypeError):
         return False
 
 

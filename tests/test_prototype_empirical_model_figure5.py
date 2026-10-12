@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from scripts.prototype_empirical_model_figure5 import (
+from scripts.prototypes.empirical_model_figure5 import (
     AVAILABILITY,
     FORCING_RUNS,
     PCMCI_PC_ALPHA,

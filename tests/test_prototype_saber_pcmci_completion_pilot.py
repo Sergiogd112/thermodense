@@ -3,7 +3,7 @@ import json
 import numpy as np
 import pytest
 
-import scripts.prototype_saber_pcmci_completion_pilot as pilot
+import scripts.prototypes.saber_pcmci_completion_pilot as pilot
 
 
 def write_sources(tmp_path, exact=True):

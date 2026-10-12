@@ -1,7 +1,7 @@
 """THROWAWAY: test native SABER CO2 altitude strata and wider HASDM cells.
 
 Run once from the repository root with:
-    uv run python scripts/prototype_saber_altitude_spatial_binning.py
+    uv run python scripts/prototypes/saber_altitude_spatial_binning.py
 """
 
 from __future__ import annotations

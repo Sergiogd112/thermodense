@@ -98,7 +98,7 @@ def validate_case(
         record = json.loads(provenance.read_text())
         result_files = record["result_files"]
         count = sum(1 for _ in tests.open()) - 1
-    except OSError, ValueError, KeyError:
+    except (OSError, ValueError, KeyError):
         return None
     hashes = {path.name: sha256(path) for path in (provenance, tests, retained)}
     if (
