@@ -46,6 +46,14 @@ DEFAULT_OUTPUT_DIR = Path("outputs/figures/results/density_trend_figure6")
 BROWN_X_LIMITS = (-7.0, 1.0)
 SHARED_ALTITUDE_LIMITS = (0.0, 850.0)
 JB_DATASETS = ("JB2006 Mauna Loa baseline", "JB2008 Mauna Loa baseline")
+WACCMX_DATASETS = ("WACCM-X run 3 (2006-2024)", "WACCM-X run 2 (1982-1997)")
+WACCMX_CAPTION = (
+    "WACCM-X (pink) is a free-running WACCM-X v2.1 historical simulation, regional "
+    "16–25°N, 200–210°E 25-cell mean, fitted with the same estimator using its own "
+    "F10.7 forcing over the settled windows of two separately initialised runs; it is a "
+    "model trend, not an observation, plotted at geometric altitude converted from "
+    "geopotential, and only where the model top covers at least 95% of days."
+)
 BROWN_REQUIRED_COLUMNS = {
     "study",
     "variant",
@@ -107,6 +115,8 @@ BROWN_MARKERS = {
     "Cnossen 2020": "o",
 }
 BROWN_LINESTYLES = {"solid": "-", "dash": "--", "dot": ":", "none": "None"}
+BROWN_MUTED_COLOR = "#c2c1bb"
+LAYOUTS = ("panels", "overlay")
 
 
 def sha256_file(path: Path) -> str:
@@ -200,10 +210,19 @@ def load_brown_literature(path: Path) -> pl.DataFrame:
     return data.drop([f"_{column}_source" for column in BROWN_NUMERIC_COLUMNS])
 
 
-def plot_brown_literature(ax: object, data: pl.DataFrame) -> list[object]:
-    """Plot the vector-extracted Brown Figure 2 geometry and study legend handles."""
+def plot_brown_literature(
+    ax: object, data: pl.DataFrame, muted: bool = False
+) -> list[object]:
+    """Plot the vector-extracted Brown Figure 2 geometry and study legend handles.
+
+    ``muted`` draws every study in one light gray behind other data and returns a
+    single legend handle for the whole synthesis, leaving axis styling to the caller.
+    """
 
     from matplotlib.lines import Line2D
+
+    def color(value: str) -> str:
+        return BROWN_MUTED_COLOR if muted else value
 
     included = data.filter(pl.col("include_in_plot"))
     for group in included.filter(pl.col("series_type") == "profile").partition_by(
@@ -214,10 +233,10 @@ def plot_brown_literature(ax: object, data: pl.DataFrame) -> list[object]:
         ax.plot(
             group.get_column("density_trend_pct_per_decade"),
             group.get_column("altitude_km"),
-            color=group.item(0, "color_hex"),
+            color=color(group.item(0, "color_hex")),
             linestyle=BROWN_LINESTYLES[group.item(0, "line_style")],
             linewidth=1.25,
-            zorder=2,
+            zorder=1.5 if muted else 2,
         )
 
     marked = included.filter(pl.col("marker"))
@@ -227,10 +246,12 @@ def plot_brown_literature(ax: object, data: pl.DataFrame) -> list[object]:
             row["altitude_km"],
             marker=BROWN_MARKERS.get(row["study"], "o"),
             s=34,
-            color=row["color_hex"],
-            edgecolor="black" if BROWN_MARKERS.get(row["study"], "o") != "x" else None,
+            color=color(row["color_hex"]),
+            edgecolor=None
+            if muted or BROWN_MARKERS.get(row["study"], "o") == "x"
+            else "black",
             linewidth=0.35,
-            zorder=3,
+            zorder=1.6 if muted else 3,
         )
 
     for row in included.filter(pl.col("series_type") == "point").iter_rows(named=True):
@@ -246,12 +267,24 @@ def plot_brown_literature(ax: object, data: pl.DataFrame) -> list[object]:
                 row["altitude_km"],
                 xerr=[[lower], [upper]],
                 fmt="none",
-                ecolor=row["color_hex"],
+                ecolor=color(row["color_hex"]),
                 elinewidth=0.9,
                 capsize=2.0,
                 zorder=1,
             )
 
+    if muted:
+        return [
+            Line2D(
+                [0],
+                [0],
+                color=BROWN_MUTED_COLOR,
+                marker="o",
+                markersize=5,
+                linewidth=1.25,
+                label="Brown et al. (2024), 16 studies",
+            )
+        ]
     handles = []
     for study in BROWN_STUDY_ORDER:
         study_rows = included.filter(pl.col("study") == study)
@@ -295,7 +328,7 @@ def validate_jb_pair(trends: pl.DataFrame, require_jb: bool = False) -> bool:
     return all(included)
 
 
-def figure_caption(jb_included: bool = False) -> str:
+def figure_caption(jb_included: bool = False, layout: str = "panels") -> str:
     """Return the Figure 6 caption supplied with the rendered artifacts."""
 
     jb_caption = (
@@ -304,6 +337,17 @@ def figure_caption(jb_included: bool = False) -> str:
         if jb_included
         else "Draft: paired JB2006/JB2008 baselines are pending licensed external model outputs."
     )
+    if layout == "overlay":
+        return (
+            "Figure 6 (overlay). Updated solar-adjusted density trends (colors): OLS log10 "
+            "density with time, centered 81-day F10.7, and squared F10.7; error bars are 27-day "
+            "Newey-West/HAC 95% intervals; markers encode record-length bins. Light gray: the "
+            "literature synthesis of Brown et al. (2024), Figure 2, reconstructed from "
+            "plot-precision values vector-extracted under CC BY 4.0, which are not replacements "
+            "for the original study data. NRLMSISE-00, NRLMSIS 2.0, and NRLMSIS 2.1 are "
+            "empirical climatology baselines rather than observed density trends. "
+            + jb_caption
+        )
     return (
         "Figure 6. (a) Literature synthesis reconstructed from plot-precision values "
         "vector-extracted from Brown et al. (2024), Figure 2, under CC BY 4.0; these "
@@ -317,7 +361,7 @@ def figure_caption(jb_included: bool = False) -> str:
     )
 
 
-def figure_alt_text(jb_included: bool = False) -> str:
+def figure_alt_text(jb_included: bool = False, layout: str = "panels") -> str:
     """Return concise non-causal alt text for the composite."""
 
     jb_text = (
@@ -327,6 +371,15 @@ def figure_alt_text(jb_included: bool = False) -> str:
         if jb_included
         else ""
     )
+    if layout == "overlay":
+        return (
+            "One 0–850 km altitude profile of density trends. Light gray curves and points "
+            "behind the data reproduce Brown et al.'s literature synthesis, mostly between "
+            "minus seven and zero percent per decade. In color, project-derived global mean "
+            "and HASDM estimates are generally about minus four to minus seven percent per "
+            "decade, empirical climatology baselines are near minus one percent per decade, "
+            "and short TU Delft records have broad intervals that span zero." + jb_text
+        )
     return (
         "Side-by-side 0–850 km altitude profiles of density trends. At left, a vector "
         "reconstruction of Brown et al.'s literature synthesis shows mostly negative reported "
@@ -391,36 +444,105 @@ def compose_panels(
     return ax_a, ax_b
 
 
+def brown_x_extent(data: pl.DataFrame) -> tuple[float, float]:
+    """Smallest and largest plotted Brown trend, including uncertainty-bar ends."""
+
+    included = data.filter(pl.col("include_in_plot"))
+    x = included.get_column("density_trend_pct_per_decade").to_numpy().astype(float)
+    minus = included.get_column("uncertainty_minus_pct_per_decade").fill_null(0.0).to_numpy()
+    plus = included.get_column("uncertainty_plus_pct_per_decade").fill_null(0.0).to_numpy()
+    return float(np.min(x - minus)), float(np.max(x + plus))
+
+
+def compose_overlay(fig: object, brown_data: pl.DataFrame, trends: pl.DataFrame) -> object:
+    """Draw the Brown synthesis in light gray behind the current trends on one axis."""
+
+    ax = fig.add_subplot(1, 1, 1)
+    brown_handles = plot_brown_literature(ax, brown_data, muted=True)
+    dataset_handles, duration_handles = plot_trends(
+        ax, trends, altitude_limits=SHARED_ALTITUDE_LIMITS
+    )
+    left, right = ax.get_xlim()
+    brown_left, brown_right = brown_x_extent(brown_data)
+    pad = 0.04 * (max(right, brown_right) - min(left, brown_left))
+    ax.set_xlim(min(left, brown_left - pad), max(right, brown_right + pad))
+    ax.set_xlabel("Density trend (%/decade)")
+    ax.set_title(
+        "Updated solar-adjusted density trends over the Brown et al. (2024) synthesis (gray)",
+        fontsize=12,
+        pad=10,
+    )
+    dataset_legend = ax.legend(
+        handles=brown_handles + dataset_handles,
+        title="Dataset",
+        loc="upper right",
+        ncol=2,
+        fontsize=7,
+        title_fontsize=8,
+        framealpha=0.92,
+    )
+    ax.add_artist(dataset_legend)
+    ax.legend(
+        handles=duration_handles,
+        title="Record length",
+        loc="lower right",
+        ncol=2,
+        fontsize=7,
+        title_fontsize=8,
+        framealpha=0.92,
+    )
+    return ax
+
+
 def compose_figure(
     brown_data_path: Path,
     trend_csv: Path,
     output_dir: Path,
     invocation: list[str] | None = None,
     require_jb: bool = False,
+    layout: str = "panels",
+    extra_trend_csvs: tuple[Path, ...] = (),
 ) -> dict[str, object]:
     """Render Figure 6 and write its caption, alt text, and provenance sidecar."""
 
+    if layout not in LAYOUTS:
+        raise ValueError(f"layout must be one of {LAYOUTS}")
     brown_data = load_brown_literature(brown_data_path)
     if not trend_csv.is_file():
         raise FileNotFoundError(f"Trend CSV does not exist: {trend_csv}")
     trends = pl.read_csv(trend_csv)
+    for extra in extra_trend_csvs:
+        if not extra.is_file():
+            raise FileNotFoundError(f"Extra trend CSV does not exist: {extra}")
+        trends = pl.concat([trends, pl.read_csv(extra)], how="diagonal_relaxed")
     jb_included = validate_jb_pair(trends, require_jb=require_jb)
+    waccmx_included = bool(set(WACCMX_DATASETS) & set(trends.get_column("dataset").to_list()))
     output_dir.mkdir(parents=True, exist_ok=True)
 
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(16.5, 7.5), layout="constrained")
-    compose_panels(fig, brown_data, trends)
-    png_path = output_dir / "density_trend_figure6.png"
-    pdf_path = output_dir / "density_trend_figure6.pdf"
-    caption_path = output_dir / "density_trend_figure6_caption.txt"
-    alt_text_path = output_dir / "density_trend_figure6_alt_text.txt"
-    provenance_path = output_dir / "density_trend_figure6_provenance.json"
+    stem = "density_trend_figure6" + ("_overlay" if layout == "overlay" else "")
+    if layout == "overlay":
+        fig = plt.figure(figsize=(10.0, 7.5), layout="constrained")
+        compose_overlay(fig, brown_data, trends)
+    else:
+        fig = plt.figure(figsize=(16.5, 7.5), layout="constrained")
+        compose_panels(fig, brown_data, trends)
+    png_path = output_dir / f"{stem}.png"
+    pdf_path = output_dir / f"{stem}.pdf"
+    caption_path = output_dir / f"{stem}_caption.txt"
+    alt_text_path = output_dir / f"{stem}_alt_text.txt"
+    provenance_path = output_dir / f"{stem}_provenance.json"
     fig.savefig(png_path, dpi=300)
     fig.savefig(pdf_path)
     plt.close(fig)
-    caption_path.write_text(figure_caption(jb_included) + "\n", encoding="utf-8")
-    alt_text_path.write_text(figure_alt_text(jb_included) + "\n", encoding="utf-8")
+    caption = figure_caption(jb_included, layout)
+    if waccmx_included:
+        caption += " " + WACCMX_CAPTION
+    caption_path.write_text(caption + "\n", encoding="utf-8")
+    alt_text_path.write_text(
+        figure_alt_text(jb_included, layout) + "\n", encoding="utf-8"
+    )
 
     output_paths = [png_path, pdf_path, caption_path, alt_text_path, provenance_path]
     provenance: dict[str, object] = {
@@ -447,15 +569,33 @@ def compose_figure(
             "rows": brown_data.height,
             "studies": brown_data.get_column("study").n_unique(),
         },
+        "layout": layout,
         "shared_altitude_limits": list(SHARED_ALTITUDE_LIMITS),
         "trend_csv": {"path": str(trend_csv), "sha256": sha256_file(trend_csv)},
+        "extra_trend_csvs": [
+            {"path": str(path), "sha256": sha256_file(path)} for path in extra_trend_csvs
+        ],
+        "waccmx_included": waccmx_included,
         "jb_required": require_jb,
         "jb_included": jb_included,
         "jb_canonical_pair": list(JB_DATASETS),
         "estimator": "OLS log10 density with time, centered 81-day F10.7, and squared F10.7; 27-day Bartlett Newey-West/HAC 95% intervals.",
         "outputs": [str(path) for path in output_paths],
         "disclosure": (
-            "Panel A is generated from digitized third-party figure geometry under "
+            (
+                "Light-gray curves and points are generated from digitized third-party figure "
+                "geometry (Brown et al. 2024) under CC BY 4.0; colored series on the same axis are "
+                "generated from project data"
+                + (" and WACCM-X model output" if waccmx_included else "")
+                + (
+                    ". JB inputs are externally generated provider-model outputs and are "
+                    "included as a canonical pair."
+                    if jb_included
+                    else ". This draft omits pending paired JB provider-model outputs."
+                )
+            )
+            if layout == "overlay"
+            else "Panel A is generated from digitized third-party figure geometry under "
             "CC BY 4.0; Panel B is generated from project data. JB inputs are externally "
             "generated provider-model outputs and are included as a canonical pair."
             if jb_included
@@ -478,6 +618,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--trend-csv", type=Path, default=DEFAULT_TREND_CSV)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--require-jb", action="store_true")
+    parser.add_argument("--layout", choices=LAYOUTS, default="panels")
+    parser.add_argument(
+        "--extra-trend-csv",
+        type=Path,
+        action="append",
+        default=[],
+        help="additional trend table with the same columns (e.g. WACCM-X model trends)",
+    )
     return parser.parse_args(argv)
 
 
@@ -491,6 +639,8 @@ def main(argv: list[str] | None = None) -> None:
         args.output_dir,
         [Path(__file__).name, *(argv if argv is not None else sys.argv[1:])],
         args.require_jb,
+        args.layout,
+        tuple(args.extra_trend_csv),
     )
     print(
         f"Wrote Figure 6 artifacts to {args.output_dir} ({provenance['brown']['digitized_csv']['sha256']})"
