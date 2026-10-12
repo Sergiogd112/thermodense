@@ -135,12 +135,24 @@ new residuals. WACCM-X uses its own prescribed CO₂.
   individual other causes are neither excluded nor bounded. The interval omits uncertainty in the CO₂ response:
   a 30% error would shift the without-CO₂ trend by about ±1.5 %/decade at 400 km.
 
+**Update 2026-10-12 ([bracketing](co2-response-bracketing-2026-10-12.md)).**
+Brown et al. (2024) is the strongest CO₂ response in their own compilation. The
+other published CO₂-only model responses are 0.31–0.92 times as strong at
+400 km. With any response weaker than about 0.72 times, a significant decline
+remains at 400 km in the global mean as well, so the compatibility claim holds
+only for the strongest modelled responses. Separately, the observed trends
+weaken much less towards 250 km than the model's. The ratio ρ250/ρ400 rose
++0.85 [+0.40, +1.31] %/decade against +2.25 predicted, and no rescaling of
+Brown's profile fits both altitudes. SABER's regional 100–139 km cooling trend
+matches WACCM-X within ±4–5 %/decade, which is too wide to discriminate.
+
 ## 5. What is not established
 
 - **Uncertainty in the CO₂ response.** Section 4 rests on one model's published
   grid, and its intervals cover observational noise only. Run-level controlled output (requested from the
   authors) or several models' CO₂ responses are needed to bound it.
-- What drives the residual decline at 200–250 km.
+- What drives the residual decline at 200–250 km: the altitude shape differs
+  from the model's, which no rescaling fixes (see the 12 Oct bracketing).
 - Why the empirical-model baselines trend at all (MSIS near −1.4, JB2008 near
   −10 %/decade at 400 km): driver drift, sampling or construction.
 
