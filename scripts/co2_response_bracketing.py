@@ -55,19 +55,23 @@ LN10 = np.log(10.0)
 # Brown et al. (2024) Table 2: modelled historical neutral-density trends at 400 km
 # (%/decade). f107=None means all solar activity. Qian (2006) values at 70 and 210 sfu
 # are their 350/450-km average; Solomon (2015) gives two CO2-O quenching rates.
+# Forcing: "CO2" = CO2 increase only; "anthropogenic" = CO2 with other greenhouse
+# gases, ozone and lower-boundary changes (Solomon 2018, 2019); "all" = all
+# historical forcings including solar, geomagnetic and magnetic-field changes.
 PUBLISHED = [
-    ("Qian et al. (2006), 70 sfu", "TIME-GCM 1D", 70.0, 1970, 2000, -2.5, True),
-    ("Qian et al. (2006), all", "TIME-GCM 1D", None, 1970, 2000, -1.7, True),
-    ("Qian et al. (2006), 210 sfu", "TIME-GCM 1D", 210.0, 1970, 2000, -0.75, True),
-    ("Solomon et al. (2015), 70 sfu, kq=1.5e-12", "TIME-GCM", 70.0, 1996, 2008, -4.9, True),
-    ("Solomon et al. (2015), 70 sfu, kq=3.0e-12", "TIME-GCM", 70.0, 1996, 2008, -6.8, True),
-    ("Solomon et al. (2015), 200 sfu, kq=1.5e-12", "TIME-GCM", 200.0, 1996, 2008, -1.8, True),
-    ("Solomon et al. (2015), 200 sfu, kq=3.0e-12", "TIME-GCM", 200.0, 1996, 2008, -2.1, True),
-    ("Solomon et al. (2018), 70 sfu", "WACCM-X", 70.0, 1974, 2003, -3.9, True),
-    ("Solomon et al. (2019), 200 sfu", "WACCM-X", 200.0, 1974, 2003, -1.7, True),
-    ("Cnossen (2020), all", "WACCM-X 2.0", None, 1950, 2015, -2.8, False),
-    ("Brown et al. (2021), 70 sfu", "WACCM-X", 70.0, 1975, 2005, -5.8, True),
+    ("Qian et al. (2006), 70 sfu", "TIME-GCM 1D", 70.0, 1970, 2000, -2.5, "CO2"),
+    ("Qian et al. (2006), all", "TIME-GCM 1D", None, 1970, 2000, -1.7, "CO2"),
+    ("Qian et al. (2006), 210 sfu", "TIME-GCM 1D", 210.0, 1970, 2000, -0.75, "CO2"),
+    ("Solomon et al. (2015), 70 sfu, kq=1.5e-12", "TIME-GCM", 70.0, 1996, 2008, -4.9, "CO2"),
+    ("Solomon et al. (2015), 70 sfu, kq=3.0e-12", "TIME-GCM", 70.0, 1996, 2008, -6.8, "CO2"),
+    ("Solomon et al. (2015), 200 sfu, kq=1.5e-12", "TIME-GCM", 200.0, 1996, 2008, -1.8, "CO2"),
+    ("Solomon et al. (2015), 200 sfu, kq=3.0e-12", "TIME-GCM", 200.0, 1996, 2008, -2.1, "CO2"),
+    ("Solomon et al. (2018), 70 sfu", "WACCM-X", 70.0, 1974, 2003, -3.9, "anthropogenic"),
+    ("Solomon et al. (2019), 200 sfu", "WACCM-X", 200.0, 1974, 2003, -1.7, "anthropogenic"),
+    ("Cnossen (2020), all", "WACCM-X 2.0", None, 1950, 2015, -2.8, "all"),
+    ("Brown et al. (2021), 70 sfu", "WACCM-X", 70.0, 1975, 2005, -5.8, "CO2"),
 ]
+CELESTRAK_START = 1958  # first full year of the CelesTrak F10.7 record (starts 1957-10-01)
 
 
 SHAPE_PAIRS = [("Global mean thermospheric density", 250.0), ("Mauna Loa HASDM subset", 200.0),
@@ -80,50 +84,69 @@ def annual_co2() -> tuple[np.ndarray, np.ndarray]:
     return df["year"].to_numpy().astype(float), df["mean"].to_numpy().astype(float)
 
 
-def model_co2_daily() -> pl.DataFrame:
-    """WACCM-X prescribed surface CO2 (CMIP6 historical), one value per date across runs."""
+def model_drivers_daily() -> pl.DataFrame:
+    """WACCM-X prescribed (CMIP6) surface CO2 and 81-day F10.7, one value per date across runs."""
     from scripts.waccmx_density_trends import load
 
     meta, d = load(WACCMX_DAILY)
     co2 = d["drivers"][:, meta["drivers"].index("co2vmr")] * 1e6
+    f107a = d["drivers"][:, meta["drivers"].index("f107a")]
     return (
-        pl.DataFrame({"date": d["dates"].astype("datetime64[D]"), "co2": co2})
+        pl.DataFrame({"date": d["dates"].astype("datetime64[D]"), "co2": co2, F107_COL: f107a})
         .with_columns(pl.col("date").cast(pl.Date))
-        .group_by("date").agg(pl.col("co2").first()).sort("date")
+        .group_by("date").agg(pl.col("co2").first(), pl.col(F107_COL).first()).sort("date")
     )
 
 
-def brown_equivalent(grid: ScalingGrid, f107: float | None, start: int, end: int) -> float:
-    """Brown (2024) grid trend at 400 km (%/decade) under one study's conditions."""
+def brown_equivalent(grid: ScalingGrid, f107: float | None, start: int, end: int) -> dict[str, object]:
+    """Brown (2024) grid trend at 400 km (%/decade) under one study's conditions, with its support."""
 
     if f107 is not None:
         years, ppm = annual_co2()
         sel = (years >= start) & (years <= end)
+        if years[sel].min() > start or years[sel].max() < end:
+            raise ValueError(f"CO2 record does not cover {start}-{end}")
         rate = np.polyfit(years[sel], ppm[sel], 1)[0]  # ppm/yr over the study period
         ln_r = grid.ln_ratio(400.0, np.array([grid.co2[0], grid.co2[0] + 10 * rate]), np.full(2, f107))
-        return float(100 * (np.exp(ln_r[1] - ln_r[0]) - 1))
-    sw = load_space_weather().filter(
-        (pl.col("date") >= pl.date(start, 1, 1)) & (pl.col("date") <= pl.date(end, 12, 31))
-    ).drop_nulls()
-    if start < 1959:  # before Mauna Loa: the CMIP6 forcing the WACCM-X runs prescribe
-        sw = sw.join(model_co2_daily(), on="date", how="inner")
-        co2 = sw["co2"].to_numpy()
+        return {"equivalent": float(100 * (np.exp(ln_r[1] - ln_r[0]) - 1)), "drivers": "fixed F10.7, MLO CO2 growth",
+                "fit_start": f"{start}", "fit_end": f"{end}", "fit_samples": int(sel.sum())}
+    first, last = pl.date(start, 1, 1), pl.date(end, 12, 31)
+    if start < CELESTRAK_START:
+        # Observed F10.7 starts in 1957: use the CMIP6 solar and CO2 forcing the WACCM-X runs prescribe.
+        sw = model_drivers_daily().filter((pl.col("date") >= first) & (pl.col("date") <= last)).drop_nulls()
+        co2, source = sw["co2"].to_numpy(), "WACCM-X prescribed f107a and co2vmr"
     else:
-        co2 = surface_co2(sw["date"].to_numpy())[0]
+        sw = load_space_weather().filter((pl.col("date") >= first) & (pl.col("date") <= last)).drop_nulls()
+        co2, source = surface_co2(sw["date"].to_numpy())[0], "observed F10.7_81, MLO CO2"
+    if sw["date"].min().year != start or sw["date"].max().year != end:
+        raise ValueError(f"drivers cover {sw['date'].min()}-{sw['date'].max()}, not {start}-{end}")
     synthetic = grid.ln_ratio(400.0, co2, sw[F107_COL].to_numpy().astype(float)) / LN10
     fit = fit_trend(SeriesSpec("brown-equivalent", 400.0, "date", "s", sw.with_columns(pl.Series("s", synthetic))))
-    return float(fit["trend_percent_per_decade"])
+    return {"equivalent": float(fit["trend_percent_per_decade"]), "drivers": source,
+            "fit_start": str(fit["start_date"]), "fit_end": str(fit["end_date"]), "fit_samples": fit["samples"]}
 
 
 def published_scalings(grid: ScalingGrid) -> pl.DataFrame:
+    """k = published log-slope / Brown-equivalent log-slope.
+
+    Studies differ in whether "%/decade" is compounded or a linear change between
+    epochs. The primary k reads it as compounded per decade; ``k_linear_reading``
+    reads it as a linear change accumulated over the study period, and the two
+    bracket the conversion ambiguity.
+    """
     rows = []
-    for study, model, f107, start, end, trend, co2_only in PUBLISHED:
+    for study, model, f107, start, end, trend, forcing in PUBLISHED:
         eq = brown_equivalent(grid, f107, start, end)
-        # Compare log-slopes, so k scales Brown's ln-density response exactly.
-        k = np.log1p(trend / 100) / np.log1p(eq / 100)
-        rows.append({"study": study, "model": model, "f107": f107, "period": f"{start}-{end}",
-                     "published_400km_pct_per_decade": trend, "co2_only": co2_only,
-                     "brown2024_equivalent_pct_per_decade": eq, "k_relative_to_brown2024": float(k)})
+        ln_eq = np.log1p(eq["equivalent"] / 100)
+        decades = (end - start) / 10
+        k_linear = np.log1p(trend / 100 * decades) / decades / ln_eq
+        rows.append({"study": study, "model": model, "forcing": forcing, "f107": f107, "period": f"{start}-{end}",
+                     "published_400km_pct_per_decade": trend, "co2_only": forcing == "CO2",
+                     "brown2024_equivalent_pct_per_decade": eq["equivalent"], "equivalent_drivers": eq["drivers"],
+                     "equivalent_fit_start": eq["fit_start"], "equivalent_fit_end": eq["fit_end"],
+                     "equivalent_fit_samples": eq["fit_samples"],
+                     "k_relative_to_brown2024": float(np.log1p(trend / 100) / ln_eq),
+                     "k_linear_reading": float(k_linear)})
     return pl.DataFrame(rows)
 
 
@@ -171,13 +194,23 @@ class Bracket:
         return pct(b), pct(b - z * se), pct(b + z * se)
 
     def k_star(self) -> tuple[float, float, float]:
-        """Scaling leaving no net trend, and the range whose interval contains zero."""
-        ks = np.linspace(-1, 4, 50001)
-        b = self.b0 - ks * self.bs
-        se = np.sqrt(np.maximum(0.0, self.var[0] + self.var[1] * ks + self.var[2] * ks**2))
-        ok = np.abs(b) <= HAC_CONFIDENCE_Z_95 * se
-        lo, hi = (float(ks[ok].min()), float(ks[ok].max())) if ok.any() else (np.nan, np.nan)
-        return float(self.b0 / self.bs), lo, hi
+        """Scaling leaving no net trend, and the k set whose 95% interval contains zero.
+
+        Zero lies in the interval when (b0 - k bs)^2 <= z^2 var(k), a quadratic
+        inequality A k^2 + B k + C <= 0. With A > 0 the set is the bounded interval
+        between the roots; otherwise it is unbounded or disconnected, which is
+        reported as an error rather than collapsed into one interval.
+        """
+        z2 = HAC_CONFIDENCE_Z_95**2
+        a, b, c = self.var
+        quad = (self.bs**2 - z2 * c, -2 * self.b0 * self.bs - z2 * b, self.b0**2 - z2 * a)
+        if quad[0] <= 0:
+            raise ValueError(f"{self.fit0['dataset']} {self.fit0['altitude_km']}: unbounded k confidence set")
+        disc = quad[1] ** 2 - 4 * quad[0] * quad[2]
+        if disc < 0:
+            return float(self.b0 / self.bs), np.nan, np.nan
+        roots = sorted((-quad[1] + sign * np.sqrt(disc)) / (2 * quad[0]) for sign in (-1, 1))
+        return float(self.b0 / self.bs), float(roots[0]), float(roots[1])
 
 
 def plot(required: pl.DataFrame, scalings: pl.DataFrame, path: Path) -> None:
@@ -196,7 +229,7 @@ def plot(required: pl.DataFrame, scalings: pl.DataFrame, path: Path) -> None:
         ax.grid(color=grid_c, linewidth=0.8, zorder=0)
         pub = scalings.filter(pl.col("co2_only"))["k_relative_to_brown2024"].to_numpy()
         ax.axvspan(pub.min(), pub.max(), color=muted, alpha=0.12, linewidth=0, zorder=0,
-                   label="CO₂-only models in Brown et al. (2024, Table 2), 400 km")
+                   label="CO₂-only model responses compiled by Brown et al. (2024), 400 km")
         for k in pub:
             ax.axvline(k, color=muted, linewidth=0.6, alpha=0.6, zorder=1)
         ax.axvline(1.0, color=ink, linewidth=1.2, zorder=1, label="Brown et al. (2024) response as published")

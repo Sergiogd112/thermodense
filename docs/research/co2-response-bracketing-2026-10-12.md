@@ -9,10 +9,13 @@ at 200 km in HASDM). Two questions:
 1. Would a different published CO₂ response close the gap?
 2. Does SABER's lower-thermosphere CO₂ cooling trend differ from WACCM-X's?
 
-Short answer: **no single strength of the CO₂ response fits both altitudes.** The
-gap is in the altitude *shape* of the trend, not its size. Weaker published
-responses leave a decline at every height. SABER cannot discriminate: its
-regional cooling trend matches the model's within ±4–5 %/decade.
+Short answer:
+- **In the global mean, no single strength of the CO₂ response fits both 250 and
+  400 km.** The gap is in the altitude *shape* of the trend, not its size. HASDM
+  suggests the same pattern but does not exclude a common scaling.
+- Weaker published CO₂-only responses leave a decline at every height.
+- SABER cannot discriminate. Its regional cooling-trend point estimate is close
+  to the model's, but both intervals are broad.
 
 ## 1. Bracketing the CO₂ response (`scripts/co2_response_bracketing.py`)
 
@@ -28,8 +31,36 @@ Each 400-km trend in Brown et al. (2024, Table 2) is divided by Brown's grid
 under the same conditions. For a fixed F10.7, the grid is evaluated at that
 F10.7 and the period's linear Mauna Loa CO₂ growth. For "all" solar activity,
 the grid is applied to the period's daily F10.7₈₁ and CO₂ and fitted with the
-same estimator; before 1959 the CO₂ is the WACCM-X/CMIP6 prescribed value. *k*
-compares log-slopes.
+same estimator. For Cnossen (2020), whose period starts before observed F10.7
+does (CelesTrak begins 1957-10), the forcing is the WACCM-X/CMIP6 prescribed
+`f107a` and `co2vmr` over the full 1950–2015.
+
+*k* compares log-slopes, reading the published "%/decade" as compounded. Some
+studies quote a linear change between two epochs. Reading the trend that way
+(`k_linear_reading`) raises *k* by ≤ 0.06 (Brown 2021: 0.98; Cnossen 2020: 0.69;
+Solomon 2018: 0.65) and changes no conclusion below. The equivalents also use
+NOAA CO₂ growth rather than each study's own prescribed CO₂ change.
+
+Forcing classes, as described in each study:
+- **CO₂ only:** Qian 2006, Solomon 2015 and Brown 2021.
+- **Anthropogenic:** Solomon 2018/2019 also changed CH₄, CFCs, ozone and the
+  lower boundary (Codex/GPT-6.1 review of PR #70, citing the 2019 paper).
+- **All forcings:** Cnossen 2020.
+
+Only CO₂-only entries enter the shaded range in the figure.
+
+A literature check of the open copies on 2026-10-12 found:
+- **Solomon et al. 2018:** CO₂ 330→375 ppmv plus CH₄ and CFCs at perpetual solar
+  minimum (Table 1: −3.9 %/decade at 400 km).
+- **Qian et al. 2006:** −2.2 and −2.9 %/decade at 350 and 450 km at 70 sfu
+  (average −2.55); −1.7 % is their all-activity regression.
+- **Brown et al. 2021:** CO₂ only, with the magnetic field fixed (−5.8 %/decade,
+  1975–2005).
+- **Solomon et al. 2015:** only the abstract was reachable, so its CO₂-only
+  classification is unverified.
+- **Altitude shape:** no accessible paper reports values at 200–300 km. Other
+  models' altitude shapes therefore cannot be compared here; they appear only in
+  figures (for example Brown 2021, Fig. 5).
 
 | Study (400 km) | F10.7 | Period | Published %/dec | Brown 2024 equivalent | *k* |
 |---|---|---|---|---|---|
@@ -40,18 +71,16 @@ compares log-slopes.
 | Solomon et al. 2015, kq 3.0e-12 | 70 | 1996–2008 | −6.8 | −7.72 | 0.88 |
 | Solomon et al. 2015, kq 1.5e-12 | 200 | 1996–2008 | −1.8 | −3.09 | 0.58 |
 | Solomon et al. 2015, kq 3.0e-12 | 200 | 1996–2008 | −2.1 | −3.09 | 0.68 |
-| Solomon et al. 2018 (WACCM-X) | 70 | 1974–2003 | −3.9 | −6.19 | 0.62 |
-| Solomon et al. 2019 (WACCM-X) | 200 | 1974–2003 | −1.7 | −2.46 | 0.69 |
-| Cnossen 2020 (WACCM-X 2.0; **all forcings**) | all | 1950–2015 | −2.8 | −4.64 | 0.60 |
+| Solomon et al. 2018 (WACCM-X; **anthropogenic**) | 70 | 1974–2003 | −3.9 | −6.19 | 0.62 |
+| Solomon et al. 2019 (WACCM-X; **anthropogenic**) | 200 | 1974–2003 | −1.7 | −2.46 | 0.69 |
+| Cnossen 2020 (WACCM-X 2.0; **all forcings**) | all | 1950–2015 | −2.8 | −4.36 | 0.64 |
 | Brown et al. 2021 (WACCM-X) | 70 | 1975–2005 | −5.8 | −6.31 | 0.92 |
 
 **Brown 2024 is the strongest response in the compilation.** The other CO₂-only
-responses are 0.31–0.92 times as strong at 400 km. Brown 2021, the same model
-family, comes out at 0.92, which supports the conversion. Caveats:
-- Table 2 values are global means at the studies' own conditions. The
-  conversion assumes each period's CO₂ growth was the forcing.
-- Some studies may include other changes. Cnossen (2020) is an all-forcing
-  trend and is excluded from the shaded range in the figure.
+responses are 0.31–0.92 times as strong at 400 km (up to 0.98 under the linear
+reading). The anthropogenic and all-forcing runs fall at 0.62–0.69. Brown 2021,
+the same model family, comes out at 0.92, which supports the conversion.
+Table 2 values are global means at the studies' own conditions.
 
 ### Scaling the observations would need
 
@@ -68,7 +97,9 @@ interval contains zero (`required_scaling.csv`):
   quenching rate (0.88) fall inside [0.72, 1.11].
 - The low altitudes want **more** than Brown's response (k ≥ 1.07 at 250 km in
   the global mean, ≥ 1.13 at 200 km in HASDM). That is stronger than every
-  published response in the compilation.
+  published response in the compilation, if their altitude shape is Brown's.
+- The k sets are solved analytically from the quadratic inequality. Every set
+  here is a bounded interval; an unbounded set would raise an error.
 - Figure: `outputs/figures/results/co2_response_bracketing/co2_response_bracketing.{png,pdf}`.
 
 ### What the published responses leave behind (`without_co2_by_published_response.csv`)
@@ -78,17 +109,18 @@ interval contains zero (`required_scaling.csv`):
 | Brown 2024 (k = 1) | −0.89 [−1.56, −0.22] | +0.47 [−0.60, +1.55] | −1.70 [−2.99, −0.39] | +0.45 [−2.29, +3.27] |
 | Brown 2021 (0.92) | −1.17 [−1.83, −0.50] | +0.00 [−1.07, +1.08] | −1.95 [−3.24, −0.65] | — |
 | Solomon 2015, kq 3e-12 (0.88) | −1.30 [−1.96, −0.63] | −0.22 [−1.28, +0.86] | −2.07 [−3.36, −0.77] | −0.34 [−3.06, +2.46] |
-| Solomon 2018 (0.62) | −2.12 [−2.78, −1.45] | −1.61 [−2.67, −0.54] | −2.83 [−4.11, −1.53] | −1.94 [−4.62, +0.82] |
+| Solomon 2018, anthropogenic (0.62) | −2.12 [−2.78, −1.45] | −1.61 [−2.67, −0.54] | −2.83 [−4.11, −1.53] | −1.94 [−4.62, +0.82] |
 | Qian 2006, all (0.37) | −2.92 [−3.59, −2.26] | −2.95 [−4.01, −1.89] | −3.56 [−4.83, −2.27] | −3.48 [−6.12, −0.77] |
 
 With any response weaker than about 0.72× Brown 2024, a significant decline
 remains at 400 km in the global mean too. The "consistent with CO₂ alone above
-275 km" result therefore holds only for the strongest modelled responses.
-Typical modelled responses leave ~1.5–3 %/decade unexplained at every height.
+275 km" result therefore holds only for the strongest modelled CO₂ responses
+(Brown 2021 and 2024, and Solomon 2015 with the doubled quenching rate).
+Weaker responses leave about 1.5–3 %/decade unexplained at every height.
 This echoes the long-standing finding that models with the standard CO₂–O
 quenching rate underpredict observed trends (Solomon et al. 2015).
 
-### Altitude shape, independent of magnitude (`altitude_shape_test.csv`)
+### Altitude shape (`altitude_shape_test.csv`)
 
 The trend of log10(ρ_low/ρ_400), the difference of two altitudes on common
 days, against Brown's predicted change in that ratio:
@@ -100,10 +132,15 @@ days, against Brown's predicted change in that ratio:
 | HASDM 250/400 km | +0.91 [−0.23, +2.05] | +2.45 | −1.51 [−2.63, −0.38] | 0.37 [−0.09, 0.84] |
 
 - In the global mean, the *k* that fits the 250/400 shape (0.18–0.58) does not
-  overlap the *k* that fits the 400-km magnitude (0.72–1.11). No rescaling of
-  Brown's profile fits both. **The model's density response grows with altitude
-  about 2.6 times faster between 250 and 400 km than the observed trends do.**
-  In HASDM the ranges overlap marginally.
+  overlap the *k* that fits the 400-km magnitude (0.72–1.11). Under this model
+  and estimator, no rescaling of Brown's profile fits both. **Between 250 and
+  400 km, the modelled response steepens with altitude about 2.6 times faster
+  than the observed trends.**
+- HASDM points the same way, but its shape and magnitude ranges overlap
+  (shape up to 0.83–0.84; magnitude from 0.50), so it does not exclude a common
+  scaling.
+- The ratio statistic still depends on *k*. What it adds is that it accounts for
+  the covariance between the two altitudes on the same days.
 - A response that falls off steeply below 300 km is what a cooler, smaller
   scale-height upper thermosphere produces. A more altitude-uniform decline
   points to a larger share of change at or below the base of the thermosphere.
@@ -136,20 +173,26 @@ year, because the ~60-day yaw cycle aliases local time.
 | WACCM-X run 3 proxy | 2006-01-01 – 2019-12-01 | −1.25 [−5.75, +3.46] |
 | WACCM-X run 3 proxy | 2006–2024 | −4.00 [−7.30, −0.58] |
 
-- **Observed and modelled cooling trends agree but are not informative here.**
-  Both are about −1 to −2 %/decade at fixed altitude over 2006–2019, with
-  intervals of ±4–5 %/decade. Those intervals are wider than any difference
-  that could settle the density-shape question. The model's own trend depends on
-  the window (−1.25 to 2019, −4.0 to 2024).
-- At fixed altitude the cooling falls despite rising CO₂. Decomposed over
-  2006–2019, the model's factors are:
-  - CO₂ mixing ratio +3.98 [+0.55, +7.53];
-  - O mixing ratio +2.78 [−0.53, +6.19];
-  - number density squared −6.96 [−13.16, −0.32] (contraction at fixed height);
-  - temperature term −0.87 [−3.81, +2.17].
+- **The point estimates are close, but the comparison is not informative.**
+  Both are about −1 to −2 %/decade at fixed altitude over 2006–2019.
+  - The individual intervals are ±4–5 %/decade. Their difference was not
+    estimated; assuming independence it would be roughly ±6 %/decade, and no
+    equivalence margin was set.
+  - The comparison also spans different altitude bounds, sampled scans against
+    daily model means, and a proxy against a retrieved flux.
+  - The model's own trend depends on the window: −1.25 to 2019, −4.0 to 2024.
+- At fixed altitude the cooling falls despite rising CO₂. Over 2006–2019, the
+  model's log trend splits into cooling-weighted factors (trapezoid-weighted).
+  Their log-slopes sum exactly to the proxy's −1.25:
+  - CO₂ mixing ratio +3.87 [+0.54, +7.30];
+  - O mixing ratio +2.72 [−0.21, +5.74];
+  - number density squared −7.09 [−12.87, −0.93] (contraction at fixed height);
+  - temperature term −0.60 [−3.35, +2.23];
+  - remainder (redistribution between heights) +0.22 [−0.51, +0.95].
 
   A fixed-height cooling trend therefore mixes the forcing with the contraction
-  it causes. A pressure-level comparison would isolate the forcing.
+  it causes. Pressure levels would reduce the sensitivity to vertical
+  displacement but would not isolate CO₂; that needs controlled runs.
 - Limits:
   - regional, 18 years, about 2–84 scans a month;
   - the proxy ignores radiative transfer below ~110 km, N₂/O₂ excitation and
@@ -162,10 +205,11 @@ year, because the ~60-day yaw cycle aliases local time.
 ## Implications for the paper
 
 - State the without-CO₂ result as conditional on the strongest published CO₂
-  response. With typical responses a residual decline of ~1.5–3 %/decade
+  responses. With weaker ones a residual decline of about 1.5–3 %/decade
   remains at all heights.
-- Report the altitude-shape mismatch as a separate, magnitude-independent
-  result. It is the most specific constraint these data put on models.
+- Report the altitude-shape mismatch as a separate result for the global mean,
+  with HASDM as supporting but not exclusive. It is the most specific
+  constraint these data put on models.
 - SABER: report as a consistency check with no discriminating power.
 
 ## Outputs (local, `outputs/figures/results/`)

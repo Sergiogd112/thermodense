@@ -19,7 +19,9 @@ This script compares its observed and modelled trends over the same region
   the optically thin limit; constants cancel in a relative trend), integrated
   over 100-140 km geopotential (~102-143 km geometric). Daily means of the
   inputs are used, so the diurnal covariance of T and O is ignored. The proxy
-  trend is decomposed into its CO2, O, number-density and temperature factors.
+  log trend is decomposed into cooling-weighted CO2, O, number-density and
+  temperature factors plus a remainder for redistribution between heights; the
+  log-slopes of the five terms sum exactly to the proxy's.
 
 Both are fitted on the common window 2006-01-01 to 2019-12-01 and on each
 record's own window. This is a fingerprint comparison, not an attribution: the
@@ -84,13 +86,19 @@ def waccmx_proxy() -> pl.DataFrame:
     n = get["DEN"] / mean_mass  # m^-3
     factors = {"co2_vmr": get["CO2"], "o_vmr": get["O"], "n_total_sq": n**2, "boltzmann": np.exp(-960.0 / get["T"])}
     local = factors["co2_vmr"] * factors["o_vmr"] * factors["n_total_sq"] * factors["boltzmann"]
-    flux = np.trapezoid(local, z_m, axis=1)
+    # Trapezoid quadrature weights, so the weighted factors and the column integral agree.
+    q = np.zeros_like(z_m)
+    q[:-1] += np.diff(z_m) / 2
+    q[1:] += np.diff(z_m) / 2
+    flux = local @ q
     out = {"date": d["dates"][sel].astype("datetime64[D]"), F107_COL: d["drivers"][sel, meta["drivers"].index("f107a")],
            "proxy": flux}
-    # Layer-mean log factors, weighted by each level's share of the column cooling, for a decomposition.
-    w = local / local.sum(axis=1, keepdims=True)
+    # Decomposition of ln(flux): cooling-weighted log factors plus an explicit remainder
+    # (redistribution of cooling between heights), which sum exactly to ln(flux).
+    w = q * local / flux[:, None]
     for name, f in factors.items():
         out[f"ln_{name}"] = (w * np.log(f)).sum(axis=1)
+    out["ln_remainder"] = np.log(flux) - sum(out[f"ln_{name}"] for name in factors)
     return pl.DataFrame(out).with_columns(pl.col("date").cast(pl.Date)).filter(pl.col("proxy").is_finite())
 
 
@@ -146,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
         fit("WACCM-X run 3", window(model, "2006-01-01", "2024-12-31"), "proxy", "100-140 km cooling proxy"),
         fit("WACCM-X run 3", window(model, *COMMON), "proxy", "100-140 km cooling proxy"),
     ]
-    for name in ("co2_vmr", "o_vmr", "n_total_sq", "boltzmann"):
+    for name in ("co2_vmr", "o_vmr", "n_total_sq", "boltzmann", "remainder"):
         rows.append(fit("WACCM-X run 3", window(model, *COMMON), f"ln_{name}", f"proxy factor: {name}"))
     table = pl.DataFrame(rows)
     args.output_dir.mkdir(parents=True, exist_ok=True)
