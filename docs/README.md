@@ -32,6 +32,8 @@ earlier advice.
 
 - [Regional inventory](research/waccm-x-regional-inventory-2026-10-05.md)
 - [Regional archive download, 10 Oct](research/waccm-x-regional-download-2026-10-10.md) — 27,026 verified daily members (1950–2024, no 2022) stored byte-exact.
+- [CO₂ transport lag, 11 Oct](research/waccm-x-co2-transport-lag-2026-10-11.md) — restart artifacts last 6–8+ years; tracer ages 1–4 years below 70 km; 100–140 km CO₂ grows at ~55–75% of the surface rate.
+- [CO₂ transport with tigramite, 11 Oct](research/waccm-x-co2-transport-tigramite-2026-10-11.md) — no lag significant under surrogate tests; apparent ~5.7-year thermospheric lag is solar aliasing.
 
 ## Architecture and workflows
 

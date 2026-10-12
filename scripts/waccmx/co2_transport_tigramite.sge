@@ -1,0 +1,6 @@
+#!/bin/bash
+#$ -S /bin/bash
+set -euo pipefail
+cd "${THERMODENSE_ROOT:-$SGE_O_WORKDIR}"  # submit with qsub from the repository root
+export OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4
+exec "${THERMODENSE_PYTHON:-.venv/bin/python}" -I scripts/waccmx/co2_transport_tigramite.py
